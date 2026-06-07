@@ -190,7 +190,7 @@
         </div>
 
         <h3>本レースの投票一覧</h3>
-        <div id="race-bottom-bets-container" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;"></div>
+        <div id="race-bottom-bets-container" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;"></div>
 
         <div style="text-align:center; margin-top:25px; display:none;" id="race-to-results-box">
             <button onclick="goToResultPresentation()" style="background:#005bac; font-size:20px; padding:12px 35px;">結果発表画面へ</button>
@@ -371,7 +371,7 @@
         let playersData = {}; 
         let isHost = false;
 
-        const POOL_NAMES = { tan: '単勝', fuk2: '2連複', fuk3: '3連複', tan2: '2連単', tan3: '3連単' };
+        const POOL_NAMES = { tan: '単勝', fuk2: '２連複', fuk3: '３連複', tan2: '２連単', tan3: '３連単' };
 
         const urlParams = new URLSearchParams(window.location.search);
         const mode = urlParams.get('mode');
@@ -584,7 +584,6 @@
                 connections[conn.peer] = conn;
                 conn.on('data', (data) => {
                     if (data.type === 'join') {
-                        // 初期の所持ポイントを100ポイントに設定
                         playersData[conn.peer] = { 
                             name: data.name, 
                             points: 100, 
@@ -740,7 +739,7 @@
 
 
         /** ========================================================
-         * 2D Canvas ボートレースアニメーション制御エンジン (厳密秒数化版)
+         * 2D Canvas ボートレースアニメーション制御エンジン (完全後退禁止・直線加速設計)
          * ======================================================== */
         let raceAnimationId = null;
         let raceStartTimestamp = null;
@@ -752,17 +751,19 @@
         function goToRaceScreen() {
             changeHostScreen('host-p6');
             
+            // 下部参加者賭け種類一覧のレンダリング (ポイント非表示・大きく種別とターゲットを明示)
             const bCont = document.getElementById('race-bottom-bets-container');
             bCont.innerHTML = "";
             for(let id in playersData) {
                 const p = playersData[id];
                 let bStr = "未投票";
                 if(p.currentBet) {
-                    bStr = `【${POOL_NAMES[p.currentBet.type]}】(${p.currentBet.boats.join('-')})に ${p.currentBet.pts} pt`;
+                    bStr = `<span style="font-size: 18px; color: var(--primary);">【${POOL_NAMES[p.currentBet.type]}】</span> <span style="font-size: 22px; font-weight: 900; letter-spacing: 1px;">${p.currentBet.boats.join(' － ')}</span>`;
                 }
                 bCont.innerHTML += `
-                    <div id="race-bet-card-${id}" style="background:#fff; border:2px solid #cbd5e1; padding:8px; border-radius:6px; font-size:14px;">
-                        <strong>${p.name}</strong>: ${bStr}
+                    <div id="race-bet-card-${id}" style="background:#fff; border:2px solid #cbd5e1; padding:10px; border-radius:8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                        <strong style="font-size:16px; color:#475569; display:block; margin-bottom:2px;">${p.name}</strong>
+                        <div>${bStr}</div>
                     </div>
                 `;
             }
@@ -785,15 +786,15 @@
                 let boatNum = i + 1;
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
-                // 厳密な着順ゴール秒数のマッピング
-                // 1位=20秒, 2位=25秒, 3位=30秒, 4位/5位/6位=35秒に向けて均等配分
-                let targetGoalTime = 35; 
-                if (finalRank === 1) targetGoalTime = 20;
-                else if (finalRank === 2) targetGoalTime = 25;
-                else if (finalRank === 3) targetGoalTime = 30;
+                // 新・タイムスケジュール完全同期マッピング
+                // 1位: 15秒, 2位: 18秒, 3位: 21秒, 4~6位: 21〜25秒の間に完全に配分
+                let targetGoalTime = 25; 
+                if (finalRank === 1) targetGoalTime = 15;
+                else if (finalRank === 2) targetGoalTime = 18;
+                else if (finalRank === 3) targetGoalTime = 21;
                 else {
-                    // 4位、5位、6位を30秒〜35秒の間で等間隔に配置して全艇が35秒でゴールするように調整
-                    targetGoalTime = 30 + (finalRank - 3) * 1.66; 
+                    // 4,5,6位は21.5秒から25秒の間で等間隔に配置して全艇が25秒までにゴール
+                    targetGoalTime = 21.5 + (finalRank - 4) * 1.75; 
                 }
 
                 boatsState.push({
@@ -806,8 +807,9 @@
                     goalTime: null,
                     color: ['#fff','#333','#ef4444','#3b82f6','#eab308','#22c55e'][i],
                     textColor: ['#000','#fff','#fff','#fff','#fff','#fff'][i],
-                    wobbleSeed: Math.random() * 100,
-                    speedFactor: Math.random() * 0.2 + 0.9 
+                    wobbleSeed: Math.random() * 50,
+                    // 道中の最大ゆらぎ幅（進捗率ベースと掛け算することで後退を防ぐ）
+                    wobbleScale: Math.random() * 20 + 35
                 });
             }
             drawRaceCanvas();
@@ -872,31 +874,44 @@
             const elapsed = (now - raceStartTimestamp) / 1000; 
             const goalX = 740;
             const startX = 60;
-            const totalDistance = goalX - startX; 
+            const totalDistance = goalX - startX; // 680px
 
             boatsState.forEach(b => {
                 if (b.goalTime !== null) return;
 
-                // 時間ベースの進捗度計算
+                // 時間軸の進捗率
                 let progressRatio = elapsed / b.targetGoalTime;
                 if (progressRatio > 1.0) progressRatio = 1.0;
 
-                // レース道中のエキサイティングなゆらぎ（抜きつ抜かれつの演出）
+                // 後退を絶対にさせないアルゴリズム:
+                // 進捗に合わせた「単調増加する滑らかな曲線(3次関数的イージング)」をベース位置に据える
+                let basePos = totalDistance * Math.pow(progressRatio, 1.2); 
+
+                // 道中のエキサイティングな「ゆらぎ演出（抜きつ抜かれつ）」
+                // progressRatioの乗算構造にすることで、0%から100%に向かって常に前方に引っ張られ、バックを防止
                 let wobble = 0;
-                if (progressRatio > 0.05 && progressRatio < 0.88) {
-                    wobble = Math.sin(elapsed * 2.8 + b.wobbleSeed) * 55 * b.speedFactor;
+                if (progressRatio > 0.02 && progressRatio < 0.94) {
+                    // サイン波による横並びの攻防
+                    wobble = Math.sin(elapsed * 3.2 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.5);
                 }
 
-                // 計算されたX位置を設定
-                b.x = startX + (totalDistance * progressRatio) + wobble;
+                b.x = startX + basePos + wobble;
 
-                // ゴール手前12%からはゆらぎをゼロに収束させ、設定通りの順位で厳密にゴールさせる
-                if (progressRatio >= 0.88) {
-                    let rem = (1.0 - progressRatio) / 0.12; 
-                    b.x = startX + (totalDistance * progressRatio) + (wobble * rem);
+                // 【最重要】ゴール手前での減速問題を解消
+                // 進捗94%を超えた瞬間から、ゆらぎ要素を綺麗に0へ減衰させつつ、
+                // スピード感を維持して一直線にゴールラインへ突っ込ませる
+                if (progressRatio >= 0.94) {
+                    let easeFactor = (1.0 - progressRatio) / 0.06; // 1.0 → 0.0
+                    b.x = startX + basePos + (wobble * easeFactor);
                 }
 
-                // ゴール到達判定
+                // 絶対にバックしない（前フレームの座標より左にいかない）ためのフェイルセーフガード
+                if(b.lastX && b.x < b.lastX) {
+                    b.x = b.lastX + 0.5; 
+                }
+                b.lastX = b.x;
+
+                // ゴール確定判定
                 if (elapsed >= b.targetGoalTime || b.x >= goalX) {
                     b.x = goalX;
                     b.goalTime = elapsed;
@@ -1080,7 +1095,7 @@
                         <div style="background:#fff; padding:12px; border-radius:6px; border:3px solid ${p.finalRank===1?'#eab308':'#cbd5e1'}">
                             <span style="font-size:24px; font-weight:bold; color:var(--primary);">🏆 総合第 ${p.finalRank}位</span><br>
                             <span style="font-size:22px; font-weight:bold;">${p.name} さん</span><br>
-                            <span style="font-size:20px; color:#ef4444; font-weight:bold;">最終アセット: ${p.points} pt</span>
+                            <span style="font-size:20px; color:#ef4444; font-weight:bold;">最終獲得ポイント: ${p.points} pt</span>
                         </div>
                     `;
                     block.onclick = null;
@@ -1134,7 +1149,7 @@
         /** ========================================================
          * 参加者側クライアントUI/インタラクション処理
          * ======================================================== */
-        let myPoints = 100; // 初期100ポイント化
+        let myPoints = 100; 
         let selectedPool = null;
         let selectedOdds = 1;
         let pickedBoats = [];
@@ -1323,7 +1338,7 @@
             myPoints = myPoints + betPts; 
 
             document.getElementById('player-wait-bet-info').style.display = "block";
-            document.getElementById('player-wait-bet-info').innerText = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt`;
+            document.getElementById('player-wait-bet-info').innerHTML = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt`;
 
             showPage('player-wait');
         }
