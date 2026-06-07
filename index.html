@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ボートレース風 順位予想クイズシステム</title>
+    <title>ボートレース風クイズ</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <!-- グラフ描画用ライブラリ -->
@@ -67,7 +67,7 @@
         .bet-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin: 10px 0; }
         @media(max-width:600px){ .bet-grid { grid-template-columns: repeat(3, 1fr); } }
         
-        /* 賭け方選択ボタン：通常時は黒文字でしっかり見やすく、選択時はアクセントカラーに */
+        /* 賭け方選択ボタン */
         .select-btn { border: 2px solid #cbd5e1; padding: 10px; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; background: #f8fafc; color: #1e293b; }
         .select-btn small { color: #64748b; font-weight: normal; }
         .select-btn.selected { background: var(--accent); border-color: #eab308; color: #000; }
@@ -91,7 +91,7 @@
          【管理ページ】クイズ事前登録 (host-p1)
          ========================================== -->
     <div id="host-p1" class="page">
-        <h1>【管理ページ】ボートレースクイズ登録</h1>
+        <h1>【管理ページ】ボートレース風クイズ登録</h1>
         
         <h3>1. ルール説明の登録</h3>
         <div class="wysiwyg-toolbar">
@@ -120,7 +120,7 @@
          参加者待機室 (host-p2)
          ========================================== -->
     <div id="host-p2" class="page">
-        <h1>ボートレースクイズ 参加者待機室</h1>
+        <h1>ボートレース風クイズ 参加者待機室</h1>
         <div id="qr-container"></div>
         <p style="text-align:center; font-weight:bold;"><a id="join-url" href="#" target="_blank"></a></p>
         <div style="text-align:center;">
@@ -245,7 +245,7 @@
          ========================================== -->
     <!-- ニックネーム登録 -->
     <div id="player-entry" class="page">
-        <h2>ボートレースクイズに参加</h2>
+        <h2>ボートレース風クイズに参加</h2>
         <p style="text-align:center;">ニックネームを入力してピットインしてください。</p>
         <input type="text" id="player-name-input" placeholder="ニックネームを入力してください" style="font-size:18px; text-align:center;">
         <button onclick="joinGame()" style="width:100%; font-size:18px; padding:12px;">ニックネームを登録</button>
@@ -254,7 +254,7 @@
     <!-- 待機画面 -->
     <div id="player-wait" class="page" style="text-align:center;">
         <div class="points-box" style="font-size:18px; margin-bottom:20px;">
-            あなたの所持ポイント: <span class="lbl-my-points">1000</span> pt
+            あなたの所持ポイント: <span class="lbl-my-points">100</span> pt
         </div>
         <h2 style="color:#64748b;">ホストの画面に注目してください</h2>
         <p>レースの展開や問題は、ホストのメイン画面に表示されます。</p>
@@ -264,7 +264,7 @@
     <!-- 参加者投票入力画面 -->
     <div id="player-betting" class="page">
         <div class="points-box" style="display:flex; justify-content:space-between; font-size:16px;">
-            <div>所持: <span class="lbl-my-points">1000</span> pt</div>
+            <div>所持: <span class="lbl-my-points">100</span> pt</div>
             <div>残りレース数: <span id="lbl-remain-races">0</span> </div>
         </div>
 
@@ -291,7 +291,7 @@
 
         <h3>3. 賭けるポイントを決定</h3>
         <div class="flex-box">
-            <input type="range" id="range-bet-points" class="range-input" min="1" max="1000" step="1" oninput="syncBetPoints('range')">
+            <input type="range" id="range-bet-points" class="range-input" min="1" max="100" step="1" oninput="syncBetPoints('range')">
             <input type="number" id="num-bet-points" min="1" style="width:90px; text-align:center;" oninput="syncBetPoints('num')">
             <span>pt</span>
         </div>
@@ -299,8 +299,8 @@
         <!-- 収支シミュレーション -->
         <div style="background:#f8fafc; padding:10px; border-radius:6px; border:1px solid #cbd5e1; margin-top:10px;">
             <div style="display:flex; justify-content:space-around; font-weight:bold; text-align:center;">
-                <div style="color:#22c55e;">🎯 的中時（合計）<br><span id="sim-win-pts" style="font-size:20px;">1000</span> pt</div>
-                <div style="color:#ef4444;">❌ 不定期時（合計）<br><span id="sim-lose-pts" style="font-size:20px;">1000</span> pt</div>
+                <div style="color:#22c55e;">🎯 的中時（合計）<br><span id="sim-win-pts" style="font-size:20px;">100</span> pt</div>
+                <div style="color:#ef4444;">❌ 不定期時（合計）<br><span id="sim-lose-pts" style="font-size:20px;">100</span> pt</div>
             </div>
         </div>
 
@@ -309,7 +309,7 @@
 
     <script>
         /** ========================================================
-         * IndexedDB 大容量保存処理（画像データ永続作用）
+         * IndexedDB 大容量保存処理
          * ======================================================== */
         const DB_NAME = 'BoatRaceQuizDB';
         const STORE_NAME = 'QuizMasterStore';
@@ -417,7 +417,7 @@
             container.innerHTML = "";
 
             appData.questions.forEach((q, idx) => {
-                if(q.order === undefined) q.order = idx + 1; // 互換性担保
+                if(q.order === undefined) q.order = idx + 1; 
 
                 const div = document.createElement('div');
                 div.className = 'question-block';
@@ -498,7 +498,6 @@
             }
         }
 
-        // セクション3に「出題する」にチェックの入っているものを一覧テーブル化し、そこで順番を設定させる
         function updateSelectedListSection3() {
             const listDiv = document.getElementById('selected-questions-list');
             let targetQuestions = [];
@@ -510,7 +509,6 @@
                 }
             });
 
-            // 現在保持されているオーダー値で一旦ソート表示
             targetQuestions.sort((a, b) => (a.qRef.order || 0) - (b.qRef.order || 0));
 
             if(targetQuestions.length === 0) {
@@ -548,7 +546,6 @@
                 q.ans = document.getElementById(`q-ans-${idx}`).value;
                 q.supp = document.getElementById(`q-supp-${idx}`).value;
                 
-                // ヘッダー側のチェックボックスから最新状態を取得
                 q.include = document.getElementById(`q-include-${idx}`).checked;
                 q.done = document.getElementById(`q-done-${idx}`).checked;
 
@@ -580,7 +577,6 @@
                 document.getElementById("qr-container").innerHTML = "";
                 new QRCode(document.getElementById("qr-container"), { text: url, width: 160, height: 160 });
                 
-                // 出題対象を「出題順番」にのっとり厳密ソートしてセット
                 selectedQuestions = appData.questions.filter(q => q.include).sort((a,b) => (a.order || 0) - (b.order || 0));
             });
 
@@ -588,14 +584,15 @@
                 connections[conn.peer] = conn;
                 conn.on('data', (data) => {
                     if (data.type === 'join') {
+                        // 初期の所持ポイントを100ポイントに設定
                         playersData[conn.peer] = { 
                             name: data.name, 
-                            points: 1000, 
-                            history: [1000], 
+                            points: 100, 
+                            history: [100], 
                             currentBet: null 
                         };
                         updatePlayerListUI();
-                        conn.send({ type: 'welcome', points: 1000 });
+                        conn.send({ type: 'welcome', points: 100 });
                     } else if (data.type === 'submit_bet') {
                         if (playersData[conn.peer]) {
                             playersData[conn.peer].currentBet = data.bet;
@@ -743,7 +740,7 @@
 
 
         /** ========================================================
-         * 2D Canvas ボートレースアニメーション制御エンジン (修正版)
+         * 2D Canvas ボートレースアニメーション制御エンジン (厳密秒数化版)
          * ======================================================== */
         let raceAnimationId = null;
         let raceStartTimestamp = null;
@@ -777,8 +774,7 @@
             finishedCount = 0;
             const q = selectedQuestions[currentPlayIndex];
             
-            // カンマ区切りの文字列（例: "1,3,2,4,5,6"）を解析して確定着順配列を作成
-            targetOrders = q.ans.split(',').map(v => parseInt(v.trim())); // 例: [1, 3, 2, 4, 5, 6]
+            targetOrders = q.ans.split(',').map(v => parseInt(v.trim())); 
 
             initBoatsGraphics();
         }
@@ -787,12 +783,18 @@
             boatsState = [];
             for(let i=0; i<6; i++) {
                 let boatNum = i + 1;
-                // このボートが何着でゴールすべきかを取得 (1着=1, 6着=6)
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
-                // 1位は約20秒、6位は約30秒となるよう、目標時間を等間隔（または傾斜）で自動マッピング
-                // 1着: 20秒, 2着: 22秒, 3着: 24秒, 4着: 26秒, 5着: 28秒, 6着: 30秒 基準
-                let targetGoalTime = 20 + (finalRank - 1) * 2.0; 
+                // 厳密な着順ゴール秒数のマッピング
+                // 1位=20秒, 2位=25秒, 3位=30秒, 4位/5位/6位=35秒に向けて均等配分
+                let targetGoalTime = 35; 
+                if (finalRank === 1) targetGoalTime = 20;
+                else if (finalRank === 2) targetGoalTime = 25;
+                else if (finalRank === 3) targetGoalTime = 30;
+                else {
+                    // 4位、5位、6位を30秒〜35秒の間で等間隔に配置して全艇が35秒でゴールするように調整
+                    targetGoalTime = 30 + (finalRank - 3) * 1.66; 
+                }
 
                 boatsState.push({
                     id: i,
@@ -805,7 +807,7 @@
                     color: ['#fff','#333','#ef4444','#3b82f6','#eab308','#22c55e'][i],
                     textColor: ['#000','#fff','#fff','#fff','#fff','#fff'][i],
                     wobbleSeed: Math.random() * 100,
-                    speedFactor: Math.random() * 0.3 + 0.85 // 固有のブレ幅
+                    speedFactor: Math.random() * 0.2 + 0.9 
                 });
             }
             drawRaceCanvas();
@@ -870,44 +872,32 @@
             const elapsed = (now - raceStartTimestamp) / 1000; 
             const goalX = 740;
             const startX = 60;
-            const totalDistance = goalX - startX; // 680px
-
-            // 3位が確定したかをチェック
-            let finishedBoats = boatsState.filter(b => b.goalTime !== null);
-            let is3rdPlaceFinished = finishedBoats.filter(b => b.finalRank <= 3).length >= 3;
+            const totalDistance = goalX - startX; 
 
             boatsState.forEach(b => {
                 if (b.goalTime !== null) return;
 
-                // 進行度をベースに、サイン波で「抜きつ抜かれつ」のゆらぎ演出
-                // 3位確定後に4位以下であれば、強制的に残り目標時間を短縮させてスピードアップ
-                let currentTargetTime = b.targetGoalTime;
-                if (is3rdPlaceFinished && b.finalRank >= 4) {
-                    // まだゴールしていない4位以下の艇は、現在の経過時間＋2秒前後で即ゴールするように目標を補正
-                    currentTargetTime = Math.min(b.targetGoalTime, elapsed + 1.5 + (b.finalRank - 4) * 0.5);
-                }
-
-                // あるべき理論上のベース位置
-                let progressRatio = elapsed / currentTargetTime;
+                // 時間ベースの進捗度計算
+                let progressRatio = elapsed / b.targetGoalTime;
                 if (progressRatio > 1.0) progressRatio = 1.0;
 
-                // 道中（全体の10%〜85%の間）にランダムな揺らぎ(wobble)を足してデッドヒート感を演出
+                // レース道中のエキサイティングなゆらぎ（抜きつ抜かれつの演出）
                 let wobble = 0;
-                if (progressRatio > 0.1 && progressRatio < 0.85) {
-                    wobble = Math.sin(elapsed * 2.5 + b.wobbleSeed) * 45 * b.speedFactor;
+                if (progressRatio > 0.05 && progressRatio < 0.88) {
+                    wobble = Math.sin(elapsed * 2.8 + b.wobbleSeed) * 55 * b.speedFactor;
                 }
 
-                // 計算されたX座標を反映
+                // 計算されたX位置を設定
                 b.x = startX + (totalDistance * progressRatio) + wobble;
 
-                // ガード処理（ゴール直前は揺らぎを収束させ、逆転現象を完全に防ぐ）
-                if (progressRatio >= 0.90) {
-                    let rem = (1.0 - progressRatio) / 0.10; // 1.0から0.0へ
+                // ゴール手前12%からはゆらぎをゼロに収束させ、設定通りの順位で厳密にゴールさせる
+                if (progressRatio >= 0.88) {
+                    let rem = (1.0 - progressRatio) / 0.12; 
                     b.x = startX + (totalDistance * progressRatio) + (wobble * rem);
                 }
 
-                // 最終ゴール処理
-                if (elapsed >= currentTargetTime || b.x >= goalX) {
+                // ゴール到達判定
+                if (elapsed >= b.targetGoalTime || b.x >= goalX) {
                     b.x = goalX;
                     b.goalTime = elapsed;
                     finishedCount++;
@@ -926,7 +916,7 @@
 
         function handleRaceFinishedUI() {
             document.getElementById('race-to-results-box').style.display = 'block';
-            const winOrders = targetOrders; // [1, 3, 2...] 実際の艇番順位
+            const winOrders = targetOrders; 
 
             for(let id in playersData) {
                 const p = playersData[id];
@@ -1144,7 +1134,7 @@
         /** ========================================================
          * 参加者側クライアントUI/インタラクション処理
          * ======================================================== */
-        let myPoints = 1000;
+        let myPoints = 100; // 初期100ポイント化
         let selectedPool = null;
         let selectedOdds = 1;
         let pickedBoats = [];
