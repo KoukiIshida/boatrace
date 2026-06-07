@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ボートレース風 順位予想クイズシステム</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --primary: #005bac; --accent: #ffcc00; --bg: #f0f4f8; --text: #333; }
+        body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 15px; line-height: 1.4; }
+        .page { display: none; max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
+        .active-page { display: block; }
+        h1, h2, h3 { text-align: center; border-bottom: 3px solid var(--primary); padding-bottom: 8px; margin-top: 10px; color: var(--primary); }
+        
+        button { background-color: var(--primary); color: white; border: none; padding: 10px 18px; font-size: 16px; border-radius: 6px; cursor: pointer; margin: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: all 0.2s; font-weight: bold; }
+        button:hover { background-color: #004480; transform: translateY(-1px); }
+        button:disabled { background-color: #ccc; cursor: not-allowed; transform: none; box-shadow: none; }
+        
+        input[type="text"], input[type="number"] { padding: 8px; margin: 4px 0; border: 2px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 15px; }
+        .wysiwyg-toolbar { display: flex; gap: 5px; margin-bottom: 5px; background: #e2e8f0; padding: 6px; border-radius: 6px; }
+        .editor { border: 2px solid #cbd5e1; min-height: 80px; padding: 10px; border-radius: 6px; overflow-y: auto; margin-bottom: 12px; background: #fff;}
+        
+        .question-block { border: 2px solid #cbd5e1; margin-bottom: 15px; border-radius: 8px; background: #f8fafc; overflow: hidden; }
+        .q-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #e2e8f0; cursor: pointer; font-weight: bold; }
+        .q-details { display: none; padding: 15px; border-top: 2px solid #cbd5e1; }
+        .q-details.open { display: block; }
+        
+        img { max-width: 100%; max-height: 180px; object-fit: contain; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: #fff; }
+        th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: center; font-size: 14px; }
+        th { background-color: var(--primary); color: white; }
+        
+        .hidden-result { cursor: pointer; background: #edf2f7; padding: 12px; border: 2px dashed #cbd5e1; margin: 8px 0; text-align: center; font-weight: bold; border-radius: 6px; font-size: 18px; }
+        #qr-container { display: flex; justify-content: center; margin: 15px 0; }
+
+        /* ボートレース風デザイン */
+        .boat-choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0; }
+        @media(max-width:600px){ .boat-choices { grid-template-columns: repeat(2, 1fr); } }
+        .boat-card { border: 3px solid #ccc; border-radius: 8px; padding: 8px; text-align: center; position: relative; background: #fff; font-weight: bold; min-height: 140px; display: flex; flex-direction: column; justify-content: space-between; align-items: center;}
+        
+        /* 艇番カラー */
+        .b1 { border-color: #ffffff; background: #ffffff; color: #000; }
+        .b2 { border-color: #000000; background: #333333; color: #fff; }
+        .b3 { border-color: #ff0000; background: #ffebee; color: #cc0000; }
+        .b4 { border-color: #0000ff; background: #e8f0fe; color: #0000cc; }
+        .b5 { border-color: #eab308; background: #fef9c3; color: #854d0e; }
+        .b6 { border-color: #16a34a; background: #dcfce7; color: #166534; }
+        
+        .boat-num { font-size: 24px; font-weight: 900; display: inline-block; width: 35px; height: 35px; line-height: 35px; border-radius: 50%; border: 2px solid; text-align: center; }
+        .b1 .boat-num { border-color: #000; background: #fff; color: #000; }
+        .b2 .boat-num { border-color: #fff; background: #000; color: #fff; }
+        .b3 .boat-num { border-color: #fff; background: #ff0000; color: #fff; }
+        .b4 .boat-num { border-color: #fff; background: #0000ff; color: #fff; }
+        .b5 .boat-num { border-color: #fff; background: #eab308; color: #fff; }
+        .b6 .boat-num { border-color: #fff; background: #16a34a; color: #fff; }
+
+        /* レース用キャンバス */
+        #race-canvas { width: 100%; height: 260px; background: #0284c7; border: 4px solid #0369a1; border-radius: 8px; box-sizing: border-box; display: block; }
+        
+        /* ベッティング画面用 */
+        .bet-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin: 10px 0; }
+        @media(max-width:600px){ .bet-grid { grid-template-columns: repeat(3, 1fr); } }
+        .select-btn { border: 2px solid #cbd5e1; padding: 10px; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; background: #f8fafc; }
+        .select-btn.selected { background: var(--accent); border-color: #eab308; color: #000; }
+        
+        .flex-box { display: flex; gap: 10px; align-items: center; margin: 10px 0; }
+        .range-input { flex-grow: 1; height: 10px; }
+        .points-box { background: #f1f5f9; padding: 10px; border-radius: 6px; text-align: center; font-weight: bold; border-left: 5px solid var(--primary); }
+        
+        /* 点滅アニメーション */
+        .flash-winner { animation: flash-anime 0.5s infinite alternate; }
+        @keyframes flash-anime { 0% { background-color: rgba(234, 179, 8, 0.2); border-color: #eab308; } 100% { background-color: rgba(234, 179, 8, 0.9); border-color: #ff0000; color:#000; } }
+    </style>
+</head>
+<body>
+
+    <div id="host-p1" class="page">
+        <h1>【管理ページ】ボートレースクイズ登録</h1>
+        
+        <h3>1. ルール説明の登録</h3>
+        <div class="wysiwyg-toolbar">
+            <button type="button" onclick="document.execCommand('bold', false, null)">太字</button>
+            <button type="button" onclick="document.execCommand('foreColor', false, '#ff0000')"><span style="color:red">赤字</span></button>
+            <button type="button" onclick="document.execCommand('foreColor', false, '#000000')">黒字</button>
+            <button type="button" onclick="document.execCommand('fontSize', false, '6')">大文字</button>
+            <button type="button" onclick="document.execCommand('fontSize', false, '3')">標準文字</button>
+        </div>
+        <div id="rule-editor" class="editor" contenteditable="true">ここにルールを入力...</div>
+        <label>ルール説明用画像: <input type="file" id="rule-image-upload" accept="image/*"></label>
+        
+        <h3>2. 問題の登録</h3>
+        <button onclick="addQuestionBlock()">＋ 新しい問題を追加する</button>
+        <div id="questions-container"></div>
+        
+        <h3>3. 出題設定と順番の確認</h3>
+        <div id="selected-questions-list"></div>
+        
+        <br><hr><br>
+        <button onclick="saveAllData()" style="width: 100%; font-size: 20px; padding: 15px;">💾 保存してスタート画面へ</button>
+    </div>
+
+    <div id="host-p2" class="page">
+        <h1>ボートレースクイズ 参加者待機室</h1>
+        <div id="qr-container"></div>
+        <p style="text-align:center; font-weight:bold;"><a id="join-url" href="#" target="_blank"></a></p>
+        <div style="text-align:center;">
+            <h3>現在の参加者 (<span id="player-count">0</span> 人)</h3>
+            <div id="player-list-box" style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center; font-size:16px;"></div>
+        </div>
+        <hr style="margin-top:20px;">
+        <div style="text-align:center;">
+            <button onclick="changeHostScreen('host-p3', 'player-wait')" style="font-size:20px; padding:12px 30px;">ルール説明へ進む</button>
+            <button onclick="changeHostScreen('host-p1')" style="background:#64748b;">管理画面に戻る</button>
+        </div>
+    </div>
+
+    <div id="host-p3" class="page">
+        <h1>📋 レースルール説明</h1>
+        <div id="display-rule-content" style="padding:15px; border:1px solid #ccc; background:#fff; border-radius:6px; margin-bottom:15px;"></div>
+        <div id="display-rule-img-container" style="text-align:center;"></div>
+        <div style="text-align:center; margin-top:20px;">
+            <button onclick="setupQuestion(0)" style="font-size:18px; padding:10px 25px;">第1レース（1問目）へ</button>
+        </div>
+    </div>
+
+    <div id="host-p4" class="page">
+        <h1 id="host-q-title">第 1 レース</h1>
+        <h3 id="host-q-text-view" style="border:none; background:#f8fafc; padding:10px; font-size:18px;"></h3>
+        
+        <div class="boat-choices" id="host-boat-container"></div>
+        
+        <hr>
+        <h3>投票・オッズ確定状況</h3>
+        <div id="host-bet-status-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap:10px; text-align:center; margin-bottom:20px;"></div>
+        
+        <div style="text-align:center; margin-top:20px;">
+            <button onclick="sendBetPrompt()" style="background:#eab308; color:#000;">参加者の画面を投票画面にする</button>
+            <button id="btn-show-bets" onclick="showAllBets()" style="font-size:18px;">みなさんの結果（予想一覧）を表示</button>
+        </div>
+    </div>
+
+    <div id="host-p5" class="page">
+        <h1 id="host-p5-title">みなさんの予想（正解時高得点順）</h1>
+        <div id="all-bets-ranking-container"></div>
+        
+        <div style="text-align:center; margin-top:25px;">
+            <button onclick="goToRaceScreen()" style="background:#22c55e; font-size:20px; padding:12px 35px;">出走準備へ</button>
+        </div>
+    </div>
+
+    <div id="host-p6" class="page">
+        <h1>🚤 PIT IN / レーススタート 🚤</h1>
+        <canvas id="race-canvas" width="800" height="260"></canvas>
+        
+        <div style="text-align:center; margin:15px 0;">
+            <button id="btn-start-race" onclick="startRaceAnimation()" style="background:#ef4444; font-size:20px; padding:12px 40px;">レース開始！</button>
+        </div>
+
+        <h3>本レースの投票一覧</h3>
+        <div id="race-bottom-bets-container" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;"></div>
+
+        <div style="text-align:center; margin-top:25px; display:none;" id="race-to-results-box">
+            <button onclick="goToResultPresentation()" style="background:#005bac; font-size:20px; padding:12px 35px;">結果発表画面へ</button>
+        </div>
+    </div>
+
+    <div id="host-p7" class="page">
+        <h1>🏁 レース確定結果 🏁</h1>
+        <div style="display:flex; gap:20px; justify-content:center; align-items:center; margin:15px 0;">
+            <div style="font-size:36px; font-weight:bold; color:#ef4444; border:4px double #ef4444; padding:5px 20px;" id="text-final-orders">1-2-3</div>
+            <div style="font-size:16px; background:#fff; padding:10px; border-radius:6px; border:1px solid #ccc; flex-grow:1;" id="text-supplementary-info">補足情報が入ります。</div>
+        </div>
+
+        <h3>現在の総ポイントランキング</h3>
+        <div id="round-ranking-container"></div>
+
+        <div style="text-align:center; margin-top:25px;" id="next-action-container"></div>
+    </div>
+
+    <div id="host-final" class="page">
+        <h1>🏆 最終結果発表（グランドフィナーレ） 🏆</h1>
+        <div id="final-ranking-container"></div>
+        
+        <hr style="margin:20px 0;">
+        <div style="text-align:center;">
+            <button onclick="showTransitionGraph()" style="background:#a855f7; font-size:18px;">📊 おまけ（ポイント推移グラフ表示）</button>
+        </div>
+    </div>
+
+    <div id="host-graph" class="page">
+        <h1>📊 総資産推移グラフ（決算）</h1>
+        <div style="width:100%; max-height:400px; background:#fff; padding:10px; border-radius:8px;">
+            <canvas id="history-chart"></canvas>
+        </div>
+        <div style="text-align:center; margin-top:25px;">
+            <button onclick="changeHostScreen('host-final')" style="background:#64748b;">最終結果発表画面に戻る</button>
+        </div>
+    </div>
+
+
+    <div id="player-entry" class="page">
+        <h2>ボートレースクイズに参加</h2>
+        <p style="text-align:center;">ニックネームを入力してピットインしてください。</p>
+        <input type="text" id="player-name-input" placeholder="ニックネームを入力してください" style="font-size:18px; text-align:center;">
+        <button onclick="joinGame()" style="width:100%; font-size:18px; padding:12px;">ニックネームを登録</button>
+    </div>
+
+    <div id="player-wait" class="page" style="text-align:center;">
+        <div class="points-box" style="font-size:18px; margin-bottom:20px;">
+            あなたの所持ポイント: <span class="lbl-my-points">1000</span> pt
+        </div>
+        <h2 style="color:#64748b;">ホストの画面に注目してください</h2>
+        <p>レースの展開や問題は、ホストのメイン画面に表示されます。</p>
+        <div id="player-wait-bet-info" style="margin-top:20px; font-weight:bold; background:#e2e8f0; padding:15px; border-radius:6px; display:none;"></div>
+    </div>
+
+    <div id="player-betting" class="page">
+        <div class="points-box" style="display:flex; justify-content:space-between; font-size:16px;">
+            <div>所持: <span class="lbl-my-points">1000</span> pt</div>
+            <div>残りレース数: <span id="lbl-remain-races">0</span> </div>
+        </div>
+
+        <h3>1. 賭け方の種類を選択</h3>
+        <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:5px;">
+            <button type="button" class="select-btn" id="btn-pool-tan" onclick="selectPoolType('tan', 6)">単勝<br><small>6倍</small></button>
+            <button type="button" class="select-btn" id="btn-pool-fuk2" onclick="selectPoolType('fuk2', 15)">2連複<br><small>15倍</small></button>
+            <button type="button" class="select-btn" id="btn-pool-fuk3" onclick="selectPoolType('fuk3', 20)">3連複<br><small>20倍</small></button>
+            <button type="button" class="select-btn" id="btn-pool-tan2" onclick="selectPoolType('tan2', 30)">2連単<br><small>30倍</small></button>
+            <button type="button" class="select-btn" id="btn-pool-tan3" onclick="selectPoolType('tan3', 120)">3連単<br><small>120倍</small></button>
+        </div>
+
+        <h3>2. 対象の艇（ボート）を選択</h3>
+        <div id="player-target-instruction" style="font-size:13px; color:#ef4444; font-weight:bold; margin-bottom:5px;">種類を選んでください</div>
+        <div class="bet-grid" id="player-boat-pickers">
+            <div class="select-btn" id="btn-pick-1" onclick="toggleBoatPick(1)">①</div>
+            <div class="select-btn" id="btn-pick-2" onclick="toggleBoatPick(2)">②</div>
+            <div class="select-btn" id="btn-pick-3" onclick="toggleBoatPick(3)">③</div>
+            <div class="select-btn" id="btn-pick-4" onclick="toggleBoatPick(4)">④</div>
+            <div class="select-btn" id="btn-pick-5" onclick="toggleBoatPick(5)">⑤</div>
+            <div class="select-btn" id="btn-pick-6" onclick="toggleBoatPick(6)">⑥</div>
+        </div>
+        <div id="lbl-ordered-selection-flow" style="margin-top:5px; font-weight:bold; color:var(--primary); font-size:15px; text-align:center;"></div>
+
+        <h3>3. 賭けるポイントを決定</h3>
+        <div class="flex-box">
+            <input type="range" id="range-bet-points" class="range-input" min="1" max="1000" step="1" oninput="syncBetPoints('range')">
+            <input type="number" id="num-bet-points" min="1" style="width:90px; text-align:center;" oninput="syncBetPoints('num')">
+            <span>pt</span>
+        </div>
+
+        <div style="background:#f8fafc; padding:10px; border-radius:6px; border:1px solid #cbd5e1; margin-top:10px;">
+            <div style="display:flex; justify-content:space-around; font-weight:bold; text-align:center;">
+                <div style="color:#22c55e;">🎯 的中時（合計）<br><span id="sim-win-pts" style="font-size:20px;">1000</span> pt</div>
+                <div style="color:#ef4444;">❌ 不的中時（合計）<br><span id="sim-lose-pts" style="font-size:20px;">1000</span> pt</div>
+            </div>
+        </div>
+
+        <button onclick="lockAndConfirmBet()" style="background:#eab308; color:#000; width:100%; font-size:18px; margin-top:15px; padding:12px;">🔒 オッズを確定する</button>
+    </div>
+
+    <script>
+        /** ========================================================
+         * IndexedDB 大容量保存処理（画像データ永続作用）
+         * ======================================================== */
+        const DB_NAME = 'BoatRaceQuizDB';
+        const STORE_NAME = 'QuizMasterStore';
+        const DB_VERSION = 1;
+
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+        async function saveToDB(key, data) {
+            const db = await initDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).put(data, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+        async function loadFromDB(key) {
+            const db = await initDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const req = tx.objectStore(STORE_NAME).get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                if (!file) return resolve(null);
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        /** ========================================================
+         * システム管理用ステート
+         * ======================================================== */
+        let appData = {
+            ruleText: "ここにルールを入力してください。", ruleImg: null,
+            questions: []
+        };
+        let selectedQuestions = [];
+        let currentPlayIndex = 0;
+
+        let peer = null;
+        let connections = {};
+        let myConnection = null;
+        let roomID = "";
+        let playersData = {}; // 各ユーザ情報
+        let isHost = false;
+
+        // 固定倍率定義
+        const POOL_NAMES = { tan: '単勝', fuk2: '2連複', fuk3: '3連複', tan2: '2連単', tan3: '3連単' };
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const mode = urlParams.get('mode');
+        const roomParam = urlParams.get('room');
+
+        window.onload = async () => {
+            const saved = await loadFromDB('boatRaceMasterData');
+            if (saved) appData = saved;
+
+            if (roomParam) {
+                isHost = false;
+                roomID = roomParam;
+                showPage('player-entry');
+                initPlayerPeer();
+            } else {
+                isHost = true;
+                renderAdminPage();
+                if (mode === 'admin') {
+                    showPage('host-p1');
+                } else {
+                    initHostPeer();
+                    showPage('host-p2');
+                }
+            }
+        };
+
+        function showPage(pageId) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active-page'));
+            document.getElementById(pageId).classList.add('active-page');
+            window.scrollTo(0,0);
+        }
+
+        /** ========================================================
+         * 管理画面（事前問題・ルール設定）処理群
+         * ======================================================== */
+        function renderAdminPage() {
+            document.getElementById('rule-editor').innerHTML = appData.ruleText || "";
+            const container = document.getElementById('questions-container');
+            container.innerHTML = "";
+
+            if (!appData.questions || appData.questions.length === 0) {
+                // 初回起動時等の初期ダミー構築
+                appData.questions = [];
+                for(let i=1; i<=3; i++) {
+                    appData.questions.push(createEmptyQuestionObject(i));
+                }
+            }
+
+            appData.questions.forEach((q, idx) => {
+                const div = document.createElement('div');
+                div.className = 'question-block';
+                div.innerHTML = `
+                    <div class="q-header" onclick="toggleQDetails(${idx})">
+                        <div>レース枠 ${idx + 1} - 題名: <span id="q-head-title-${idx}">${q.title || '未設定'}</span></div>
+                        <div id="q-toggle-icon-${idx}">▼ 開いて編集</div>
+                    </div>
+                    <div class="q-details" id="q-details-${idx}">
+                        <label>レース名/ジャンル: <input type="text" id="q-title-${idx}" value="${q.title || ''}" oninput="document.getElementById('q-head-title-${idx}').innerText = this.value || '未設定'" style="width:80%;"></label><br><br>
+                        
+                        <b>問題文（テキスト）</b>
+                        <textarea id="q-text-${idx}" style="width:100%; height:50px; margin-bottom:10px;">${q.text || ''}</textarea>
+                        
+                        <b>6つの選択肢設定</b><br>
+                        <label>表示パターン: 
+                            <select id="q-layout-${idx}">
+                                <option value="text" ${q.layout==='text'?'selected':''}>テキストのみ</option>
+                                <option value="image" ${q.layout==='image'?'selected':''}>画像のみ</option>
+                                <option value="top" ${q.layout==='top'?'selected':''}>画像の上にテキスト</option>
+                                <option value="bottom" ${q.layout==='bottom'?'selected':''}>画像の下にテキスト</option>
+                            </select>
+                        </label>
+                        <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:8px;">
+                            ${[1,2,3,4,5,6].map(n => `
+                                <div style="border:1px solid #ccc; padding:8px; background:#fff; border-radius:4px;">
+                                    <span class="boat-num" style="transform:scale(0.8);">${n}</span>番艇<br>
+                                    テキスト: <input type="text" id="q-c-txt-${idx}-${n}" value="${q.choices[n-1].text || ''}" style="width:100%;"><br>
+                                    画像アップロード: <input type="file" id="q-c-img-${idx}-${n}" accept="image/*">
+                                    ${q.choices[n-1].img ? `<br><small style="color:green;">✓画像保存あり</small>` : ''}
+                                </div>
+                            `).join('')}
+                        </div><br>
+
+                        <b>正解順位の登録（1位〜6位の艇番をカンマ区切りで入力。例: 1,3,2,4,5,6）</b><br>
+                        <input type="text" id="q-ans-${idx}" value="${q.ans || '1,2,3,4,5,6'}" placeholder="1,2,3,4,5,6" style="width:50%; text-align:center; font-weight:bold;"><br><br>
+                        
+                        <b>結果発表時の補足情報（テキスト）</b>
+                        <textarea id="q-supp-${idx}" style="width:100%; height:40px;">${q.supp || ''}</textarea>
+
+                        <hr style="border-style:dashed;">
+                        <label><input type="checkbox" id="q-include-${idx}" ${q.include ? 'checked' : ''} onchange="updateSelectedList()"> <b>今回のゲームに出題する</b></label> | 
+                        <label><input type="checkbox" id="q-done-${idx}" ${q.done ? 'checked' : ''}> 出題済みにする</label> |
+                        出題順番: <input type="number" style="width:60px;" id="q-order-${idx}" value="${q.order ?? idx}" onchange="updateSelectedList()">
+                        <button onclick="removeQuestion(${idx})" style="background:#ef4444; float:right; padding:4px 10px; font-size:12px;">この枠を削除</button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            updateSelectedList();
+        }
+
+        function createEmptyQuestionObject(orderNum) {
+            return {
+                title: `第${orderNum}レース`, text: '予想してください。', layout: 'text',
+                choices: Array.from({length:6}, () => ({text:'', img:null})),
+                ans: '1,2,3,4,5,6', supp: '', include: true, order: orderNum, done: false
+            };
+        }
+        function toggleQDetails(idx) {
+            const details = document.getElementById(`q-details-${idx}`);
+            details.classList.toggle('open');
+        }
+        function addQuestionBlock() {
+            appData.questions.push(createEmptyQuestionObject(appData.questions.length + 1));
+            renderAdminPage();
+            toggleQDetails(appData.questions.length - 1);
+        }
+        function removeQuestion(idx) {
+            if(confirm("本当にこの問題を削除しますか？")) {
+                appData.questions.splice(idx, 1);
+                renderAdminPage();
+            }
+        }
+        function updateSelectedList() {
+            const listDiv = document.getElementById('selected-questions-list');
+            let temp = [];
+            appData.questions.forEach((q, idx) => {
+                const cb = document.getElementById(`q-include-${idx}`);
+                const ord = document.getElementById(`q-order-${idx}`);
+                if (cb && cb.checked) {
+                    temp.push({ title: document.getElementById(`q-title-${idx}`).value || `枠${idx+1}`, order: parseInt(ord.value) || 0, origIdx: idx });
+                }
+            });
+            temp.sort((a,b) => a.order - b.order);
+            if(temp.length === 0) { listDiv.innerHTML = "<p style='color:red;'>※現在出題対象にチェックが入っている問題がありません。</p>"; return; }
+            let html = "<p><strong>【今回の出題順】</strong></p><ol>";
+            temp.forEach(t => { html += `<li>${t.title} (元枠:${t.origIdx + 1})</li>`; });
+            html += "</ol>";
+            listDiv.innerHTML = html;
+        }
+
+        async function saveAllData() {
+            appData.ruleText = document.getElementById('rule-editor').innerHTML;
+            const ruleImgFile = document.getElementById('rule-image-upload').files[0];
+            if (ruleImgFile) appData.ruleImg = await fileToBase64(ruleImgFile);
+
+            for (let idx = 0; idx < appData.questions.length; idx++) {
+                const q = appData.questions[idx];
+                q.title = document.getElementById(`q-title-${idx}`).value;
+                q.text = document.getElementById(`q-text-${idx}`).value;
+                q.layout = document.getElementById(`q-layout-${idx}`).value;
+                q.ans = document.getElementById(`q-ans-${idx}`).value;
+                q.supp = document.getElementById(`q-supp-${idx}`).value;
+                q.include = document.getElementById(`q-include-${idx}`).checked;
+                q.done = document.getElementById(`q-done-${idx}`).checked;
+                q.order = parseInt(document.getElementById(`q-order-${idx}`).value) || 0;
+
+                for(let n=1; n<=6; n++) {
+                    q.choices[n-1].text = document.getElementById(`q-c-txt-${idx}-${n}`).value;
+                    const f = document.getElementById(`q-c-img-${idx}-${n}`).files[0];
+                    if(f) q.choices[n-1].img = await fileToBase64(f);
+                }
+            }
+
+            await saveToDB('boatRaceMasterData', appData);
+            alert("設定データをローカルストレージへ保存しました。");
+            window.location.href = window.location.pathname; 
+        }
+
+
+        /** ========================================================
+         * ホストサーバー（通信・ゲームルーム進行）
+         * ======================================================== */
+        function initHostPeer() {
+            roomID = Math.random().toString(36).substring(2, 8).toUpperCase();
+            peer = new Peer(roomID); 
+            
+            peer.on('open', (id) => {
+                const url = window.location.href.split('?')[0] + '?room=' + id;
+                document.getElementById('join-url').innerText = url;
+                document.getElementById('join-url').href = url;
+                
+                document.getElementById("qr-container").innerHTML = "";
+                new QRCode(document.getElementById("qr-container"), { text: url, width: 160, height: 160 });
+                
+                // 出題対象のソート抽出
+                selectedQuestions = appData.questions.filter(q => q.include).sort((a,b) => a.order - b.order);
+            });
+
+            peer.on('connection', (conn) => {
+                connections[conn.peer] = conn;
+                conn.on('data', (data) => {
+                    if (data.type === 'join') {
+                        // 1000点初期、かつ履歴用配列
+                        playersData[conn.peer] = { 
+                            name: data.name, 
+                            points: 1000, 
+                            history: [1000], 
+                            currentBet: null 
+                        };
+                        updatePlayerListUI();
+                        conn.send({ type: 'welcome', points: 1000 });
+                    } else if (data.type === 'submit_bet') {
+                        if (playersData[conn.peer]) {
+                            playersData[conn.peer].currentBet = data.bet;
+                            updateHostBetStatusUI();
+                        }
+                    }
+                });
+                conn.on('close', () => {
+                    delete connections[conn.peer];
+                    delete playersData[conn.peer];
+                    updatePlayerListUI();
+                    updateHostBetStatusUI();
+                });
+            });
+        }
+
+        function updatePlayerListUI() {
+            const container = document.getElementById('player-list-box');
+            container.innerHTML = "";
+            for (let id in playersData) {
+                container.innerHTML += `<div style="background:#fff; padding:6px 12px; border:2px solid var(--primary); border-radius:20px; font-weight:bold;">👤 ${playersData[id].name}</div>`;
+            }
+            document.getElementById('player-count').innerText = Object.keys(playersData).length;
+        }
+
+        function updateHostBetStatusUI() {
+            const container = document.getElementById('host-bet-status-list');
+            if(!container) return;
+            container.innerHTML = "";
+            for (let id in playersData) {
+                const p = playersData[id];
+                const isConfirmed = p.currentBet !== null;
+                container.innerHTML += `
+                    <div style="padding:10px; border-radius:6px; background: ${isConfirmed ? '#dcfce7':'#fee2e2'}; border: 2px solid ${isConfirmed ? '#16a34a':'#ef4444'}; font-weight:bold;">
+                        ${p.name}<br>
+                        <span style="font-size:13px; color:${isConfirmed ? '#166534':'#991b1b'};">${isConfirmed ? '🔒 確定済み' : '⏳ 検討中'}</span>
+                    </div>
+                `;
+            }
+        }
+
+        function broadcast(type, payload = {}) {
+            for (let id in connections) {
+                connections[id].send({ type, ...payload });
+            }
+        }
+
+        function changeHostScreen(hostPage, playerPage = null) {
+            showPage(hostPage);
+            if (hostPage === 'host-p3') {
+                document.getElementById('display-rule-content').innerHTML = appData.ruleText;
+                document.getElementById('display-rule-img-container').innerHTML = appData.ruleImg ? `<img src="${appData.ruleImg}">` : "";
+            }
+            if (playerPage) broadcast('page', { page: playerPage });
+        }
+
+
+        /** ========================================================
+         * クイズメインコアゲーム処理
+         * ======================================================== */
+        function setupQuestion(listIndex) {
+            if (selectedQuestions.length === 0) {
+                alert("出題対象に指定されたレースがありません。管理画面でチェックを入れてください。");
+                return;
+            }
+            if(listIndex >= selectedQuestions.length) {
+                showFinalResult();
+                return;
+            }
+            
+            currentPlayIndex = listIndex;
+            const q = selectedQuestions[currentPlayIndex];
+
+            // 参加者の前ターンベット初期化
+            for (let id in playersData) {
+                playersData[id].currentBet = null;
+            }
+
+            document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex+1}レース`}`;
+            document.getElementById('host-q-text-view').innerText = q.text;
+            
+            // ホスト側6択配置構築（ボートイメージ表現）
+            const bContainer = document.getElementById('host-boat-container');
+            bContainer.innerHTML = "";
+            for(let i=1; i<=6; i++) {
+                const ch = q.choices[i-1];
+                let cardInner = `<span class="boat-num b${i}">${i}</span>`;
+                let textEl = `<div style="font-size:14px; margin-top:5px;">${ch.text || '---'}</div>`;
+                let imgEl = ch.img ? `<img src="${ch.img}" style="max-height:70px;">` : '';
+                
+                if(q.layout === 'text') cardInner += textEl;
+                else if(q.layout === 'image') cardInner += imgEl;
+                else if(q.layout === 'top') cardInner += (textEl + imgEl);
+                else if(q.layout === 'bottom') cardInner += (imgEl + textEl);
+
+                bContainer.innerHTML += `<div class="boat-card b${i}">${cardInner}</div>`;
+            }
+
+            updateHostBetStatusUI();
+            changeHostScreen('host-p4');
+            broadcast('page', { page: 'player-wait' });
+        }
+
+        function sendBetPrompt() {
+            const remainRaces = selectedQuestions.length - currentPlayIndex; // 残りレース数
+            const isLast = (remainRaces === 1);
+            
+            broadcast('request_bet', {
+                remainRaces: remainRaces,
+                isLast: isLast
+            });
+        }
+
+        // みなさんの結果表示
+        function showAllBets() {
+            changeHostScreen('host-p5');
+            const container = document.getElementById('all-bets-ranking-container');
+            container.innerHTML = "";
+
+            // 全員のデータを「正解した場合の合計点（降順）」に仮計算ソート
+            let list = [];
+            for(let id in playersData) {
+                const p = playersData[id];
+                let potentialTotal = p.points;
+                let betString = "未投票";
+                
+                if(p.currentBet) {
+                    const b = p.currentBet;
+                    // 正解した場合の合計点数
+                    potentialTotal = (p.points - b.pts) + (b.pts * b.odds);
+                    betString = `【${POOL_NAMES[b.type]}】 艇:[${b.boats.join(',')}] 賭金:${b.pts}pt`;
+                }
+                list.push({ name: p.name, pTotal: potentialTotal, desc: betString });
+            }
+
+            list.sort((a,b) => b.pTotal - a.pTotal);
+
+            if(list.length === 0) {
+                container.innerHTML = "<p style='text-align:center;'>参加者がいません。</p>";
+                return;
+            }
+
+            let tHtml = `<table><tr><th>順位</th><th>参加者</th><th>賭け内容</th><th>的中時の想定合計アセット</th></tr>`;
+            list.forEach((item, index) => {
+                tHtml += `<tr><td>${index+1}</td><td><strong>${item.name}</strong></td><td>${item.desc}</td><td style="color:#22c55e; font-weight:bold;">${item.pTotal} pt</td></tr>`;
+            });
+            tHtml += `</table>`;
+            container.innerHTML = tHtml;
+        }
+
+
+        /** ========================================================
+         * 2D Canvas ボートレースアニメーション制御エンジン
+         * ======================================================== */
+        let raceAnimationId = null;
+        let raceStartTimestamp = null;
+        let boatsState = [];
+        let racePhase = 'ready'; // ready, racing, finished
+        let targetOrders = []; // 最終確定順位配列（0インデックス変換ベース）
+
+        function goToRaceScreen() {
+            changeHostScreen('host-p6');
+            
+            // 下部参加者賭け種類一覧のレンダリング
+            const bCont = document.getElementById('race-bottom-bets-container');
+            bCont.innerHTML = "";
+            for(let id in playersData) {
+                const p = playersData[id];
+                let bStr = "未投票";
+                if(p.currentBet) {
+                    bStr = `【${POOL_NAMES[p.currentBet.type]}】(${p.currentBet.boats.join('-')})に ${p.currentBet.pts} pt`;
+                }
+                bCont.innerHTML += `
+                    <div id="race-bet-card-${id}" style="background:#fff; border:2px solid #cbd5e1; padding:8px; border-radius:6px; font-size:14px;">
+                        <strong>${p.name}</strong>: ${bStr}
+                    </div>
+                `;
+            }
+
+            document.getElementById('btn-start-race').style.display = 'inline-block';
+            document.getElementById('race-to-results-box').style.display = 'none';
+            
+            // キャンバス初期化（スタート線手前整列）
+            racePhase = 'ready';
+            const q = selectedQuestions[currentPlayIndex];
+            // 登録されている正解順位の解析
+            targetOrders = q.ans.split(',').map(v => parseInt(v.trim()) - 1); // 1~6を0~5インデックスへ
+
+            initBoatsGraphics();
+        }
+
+        function initBoatsGraphics() {
+            boatsState = [];
+            for(let i=0; i<6; i++) {
+                boatsState.push({
+                    id: i,
+                    num: i + 1,
+                    x: 30, // スタート位置
+                    y: 25 + (i * 38),
+                    speed: 0,
+                    rank: 1,
+                    goalTime: null,
+                    color: ['#fff','#333','#ef4444','#3b82f6','#eab308','#22c55e'][i],
+                    textColor: ['#000','#fff','#fff','#fff','#fff','#fff'][i],
+                    phase: 'normal' // normal, rush
+                });
+            }
+            drawRaceCanvas();
+        }
+
+        function drawRaceCanvas() {
+            const canvas = document.getElementById('race-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // コースレーン描画
+            for(let i=0; i<6; i++) {
+                ctx.fillStyle = (i % 2 === 0) ? '#0284c7' : '#075985';
+                ctx.fillRect(0, i*38 + 15, canvas.width, 38);
+                // レーン境界線
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(0, i*38 + 15, canvas.width, 38);
+            }
+
+            // スタートライン＆ゴールライン
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(60, 15); ctx.lineTo(60, 245); ctx.stroke(); // スタート
+            
+            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(740, 15); ctx.lineTo(740, 245); ctx.stroke(); // ゴール
+
+            // ボートシンボル描画
+            boatsState.forEach(b => {
+                // 水しぶきエフェクト
+                if(racePhase === 'racing' && !b.goalTime) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+                    for(let i=0; i<4; i++) {
+                        ctx.fillRect(b.x - 10 - Math.random()*15, b.y + 5 + Math.random()*8, 4, 4);
+                    }
+                }
+
+                // 船体
+                ctx.fillStyle = b.color;
+                ctx.beginPath();
+                ctx.moveTo(b.x, b.y);
+                ctx.lineTo(b.x + 24, b.y + 6);
+                ctx.lineTo(b.x, b.y + 16);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+
+                // カウリングナンバー
+                ctx.fillStyle = b.textColor;
+                ctx.font = 'bold 11px sans-serif';
+                ctx.fillText(b.num, b.x + 4, b.y + 13);
+                
+                // ゴールタイム/順位バッジ表示
+                if(b.goalTime) {
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.font = 'italic bold 12px sans-serif';
+                    ctx.fillText(`${b.finalRank}着`, b.x + 30, b.y + 13);
+                }
+            });
+        }
+
+        function startRaceAnimation() {
+            document.getElementById('btn-start-race').style.display = 'none';
+            racePhase = 'racing';
+            raceStartTimestamp = performance.now();
+            
+            // 毎ゲーム完全に動きをランダム変動化するための係数シードを生成
+            boatsState.forEach(b => {
+                b.seed = Math.random() * 2 + 1;
+                b.wobble = Math.random() * 100;
+            });
+
+            requestAnimationFrame(raceAnimationLoop);
+        }
+
+        let finishedCount = 0;
+
+        function raceAnimationLoop(now) {
+            const elapsed = (now - raceStartTimestamp) / 1000; // 秒換算
+            const canvas = document.getElementById('race-canvas');
+            const goalX = 740;
+
+            // 1位の目標想定到着タイムを約20秒に設定
+            // 3位が確定したら、4〜6位は消化試合スピードアップモード(rush)にする
+            let finishedBoats = boatsState.filter(b => b.goalTime !== null);
+            let activeCount = boatsState.filter(b => b.goalTime === null).length;
+
+            boatsState.forEach(b => {
+                if (b.goalTime !== null) return;
+
+                // 本体の設定順位（targetOrdersのインデックス）
+                let intendedRank = targetOrders.indexOf(b.id); // 0 = 1位, 1 = 2位...
+
+                // 3位確定後の加速ロジック
+                if (finishedBoats.length >= 3 && intendedRank >= 3) {
+                    b.phase = 'rush';
+                }
+
+                // ベース前進速度のモデリング（毎回完全ランダムな道中展開）
+                let baseSpeed = 1.6 + Math.sin(elapsed + b.wobble) * 0.9 + (b.seed * 0.3);
+                
+                // ゴール手前での最終順位収束調整力
+                if (b.x > 500) {
+                    // 想定順位が高いボートにブースト、低いボートにブレーキ
+                    baseSpeed += (5 - intendedRank) * 0.4;
+                }
+                if (b.phase === 'rush') {
+                    baseSpeed += 5.5; // 4位以下の高速化処理
+                }
+
+                if(baseSpeed < 0.2) baseSpeed = 0.2;
+                b.x += baseSpeed;
+
+                // ゴール判定
+                if (b.x >= goalX) {
+                    b.x = goalX;
+                    finishedCount++;
+                    b.goalTime = elapsed;
+                    b.finalRank = targetOrders.indexOf(b.id) + 1; // 事前設定された着順を厳密に適用
+                }
+            });
+
+            // 現在位置での仮順位リアルタイム計算
+            let sorting = [...boatsState].sort((a,b) => b.x - a.x);
+            
+            drawRaceCanvas();
+
+            if (boatsState.some(b => b.goalTime === null)) {
+                raceAnimationId = requestAnimationFrame(raceAnimationLoop);
+            } else {
+                // 6全艇ゴール完了
+                racePhase = 'finished';
+                handleRaceFinishedUI();
+            }
+        }
+
+        // 的中者の点滅と終了処理
+        function handleRaceFinishedUI() {
+            document.getElementById('race-to-results-box').style.display = 'block';
+            
+            // 正解判定配列の構築
+            const winOrders = targetOrders.map(idx => idx + 1); // [1, 3, 2, 4, 5, 6]形式
+
+            for(let id in playersData) {
+                const p = playersData[id];
+                if(!p.currentBet) continue;
+
+                let isHit = checkBetIsHit(p.currentBet, winOrders);
+                if(isHit) {
+                    // 当たった人の下部カード要素を点滅クラスへ
+                    const card = document.getElementById(`race-bet-card-${id}`);
+                    if(card) card.classList.add('flash-winner');
+                }
+            }
+        }
+
+
+        /** ========================================================
+         * 投票結果判定＆配当ポイント計算モジュール
+         * ======================================================== */
+        function checkBetIsHit(bet, winOrders) {
+            const bArr = bet.boats; // 参加者が選んだ艇の配列 [1, 2...]
+            switch(bet.type) {
+                case 'tan':  // 単勝: 1位一致
+                    return winOrders[0] === bArr[0];
+                case 'fuk2': // 2連複: 1,2位が順不同一致
+                    return bArr.includes(winOrders[0]) && bArr.includes(winOrders[1]);
+                case 'fuk3': // 3連複: 1,2,3位が順不同一致
+                    return bArr.includes(winOrders[0]) && bArr.includes(winOrders[1]) && bArr.includes(winOrders[2]);
+                case 'tan2': // 2連单: 1,2位の着順完全一致
+                    return winOrders[0] === bArr[0] && winOrders[1] === bArr[1];
+                case 'tan3': // 3連单: 1,2,3位の着順完全一致
+                    return winOrders[0] === bArr[0] && winOrders[1] === bArr[1] && winOrders[2] === bArr[2];
+            }
+            return false;
+        }
+
+        function goToResultPresentation() {
+            changeHostScreen('host-p7');
+            const q = selectedQuestions[currentPlayIndex];
+            
+            const winOrders = targetOrders.map(idx => idx + 1);
+            document.getElementById('text-final-orders').innerText = winOrders.slice(0,3).join(' - ');
+            document.getElementById('text-supplementary-info').innerText = q.supp || "特記事項なし";
+
+            // 計算精算ロジックの実行
+            for(let id in playersData) {
+                const p = playersData[id];
+                if(p.currentBet) {
+                    let isHit = checkBetIsHit(p.currentBet, winOrders);
+                    // 賭けた分を予め消費
+                    p.points -= p.currentBet.pts;
+                    if(isHit) {
+                        p.points += (p.currentBet.pts * p.currentBet.odds);
+                    }
+                }
+                // チャート履歴用に今回の最終ポイント状態をプッシュ保存
+                p.history.push(p.points);
+            }
+
+            // 1位～最下位までの表示順をボタン開閉ギミック付きで生成
+            renderRoundRankingUI();
+
+            // 次レースへのアクションボタン配置
+            const actionContainer = document.getElementById('next-action-container');
+            actionContainer.innerHTML = "";
+            
+            if (currentPlayIndex + 1 < selectedQuestions.length) {
+                const nextBtn = document.createElement('button');
+                nextBtn.innerText = `次レース（第${currentPlayIndex + 2}戦）の準備へ`;
+                nextBtn.style.fontSize = "18px";
+                nextBtn.onclick = () => setupQuestion(currentPlayIndex + 1);
+                actionContainer.appendChild(nextBtn);
+            } else {
+                const finBtn = document.createElement('button');
+                finBtn.innerText = "🏁 最終結果発表へ進む";
+                finBtn.style.background = "#ef4444";
+                finBtn.style.fontSize = "20px";
+                finBtn.onclick = showFinalResult;
+                actionContainer.appendChild(finBtn);
+            }
+        }
+
+        function renderRoundRankingUI() {
+            const container = document.getElementById('round-ranking-container');
+            container.innerHTML = "";
+
+            // 同率処理を含むソート計算
+            let sortedPlayers = Object.values(playersData).sort((a,b) => b.points - a.points);
+            let currentRank = 1;
+            let rankCounter = 1;
+            let prevPoints = null;
+
+            sortedPlayers.forEach(p => {
+                if (prevPoints === p.points) {
+                    p.tempRank = currentRank;
+                } else {
+                    p.tempRank = rankCounter;
+                    currentRank = rankCounter;
+                }
+                rankCounter++;
+                prevPoints = p.points;
+            });
+
+            // 1位, 2位, 3位, 4位以下の順でトグルボタン構築
+            [1, 2, 3].forEach(rNum => {
+                const rPlayers = sortedPlayers.filter(p => p.tempRank === rNum);
+                if(rPlayers.length > 0) {
+                    const block = document.createElement('div');
+                    block.className = 'hidden-result';
+                    block.innerText = `👑 暫定 ${rNum}位のプレイヤーを表示`;
+                    block.onclick = () => {
+                        let html = `<div style="background:#fff; border:2px solid var(--accent); padding:10px; border-radius:6px;"><h3>👑 暫定第 ${rNum}位</h3>`;
+                        rPlayers.forEach(rp => {
+                            html += `<p style="font-size:18px; margin:5px 0;"><strong>${rp.name}</strong> さん : ${rp.points} pt</p>`;
+                        });
+                        html += `</div>`;
+                        block.innerHTML = html;
+                        block.onclick = null; b.style.cursor = 'default';
+                    };
+                    container.appendChild(block);
+                }
+            });
+
+            const others = sortedPlayers.filter(p => p.tempRank >= 4);
+            if(others.length > 0) {
+                const block = document.createElement('div');
+                block.className = 'hidden-result';
+                block.innerText = `4位以下のプレイヤーを表示`;
+                block.onclick = () => {
+                    let html = `<div style="background:#fff; border:1px solid #ccc; padding:10px; border-radius:6px; text-align:left; max-width:400px; margin:0 auto;">`;
+                    others.forEach(op => {
+                        html += `<div style="display:flex; justify-content:space-between; margin:4px 0; font-size:16px;"><span>${op.tempRank}位: ${op.name}さん</span><strong>${op.points} pt</strong></div>`;
+                    });
+                    html += `</div>`;
+                    block.innerHTML = html;
+                    block.onclick = null;
+                };
+                container.appendChild(block);
+            }
+        }
+
+        // 最終戦終了時のグランドフィナーレ
+        function showFinalResult() {
+            changeHostScreen('host-final');
+            const container = document.getElementById('final-ranking-container');
+            container.innerHTML = "";
+
+            let sortedPlayers = Object.values(playersData).sort((a,b) => b.points - a.points);
+            let currentRank = 1;
+            let rankCounter = 1;
+            let prevPoints = null;
+
+            sortedPlayers.forEach(p => {
+                if (prevPoints === p.points) p.finalRank = currentRank;
+                else { p.finalRank = rankCounter; currentRank = rankCounter; }
+                rankCounter++;
+                prevPoints = p.points;
+            });
+
+            // 1位から人数分のトグル個別開閉ボタンを生成
+            sortedPlayers.forEach(p => {
+                const block = document.createElement('div');
+                block.className = 'hidden-result';
+                if(p.finalRank <= 3) {
+                    block.innerText = `🏆 総合第 ${p.finalRank}位 を発表`;
+                } else {
+                    block.innerText = `総合第 ${p.finalRank}位 を発表`;
+                }
+                
+                block.onclick = () => {
+                    block.innerHTML = `
+                        <div style="background:#fff; padding:12px; border-radius:6px; border:3px solid ${p.finalRank===1?'#eab308':'#cbd5e1'}">
+                            <span style="font-size:24px; font-weight:bold; color:var(--primary);">🏆 総合第 ${p.finalRank}位</span><br>
+                            <span style="font-size:22px; font-weight:bold;">${p.name} さん</span><br>
+                            <span style="font-size:20px; color:#ef4444; font-weight:bold;">最終アセット: ${p.points} pt</span>
+                        </div>
+                    `;
+                    block.onclick = null;
+                };
+                container.appendChild(block);
+            });
+        }
+
+        // 桃鉄風資産推移グラフ生成
+        let chartInstance = null;
+        function showTransitionGraph() {
+            changeHostScreen('host-graph');
+            const ctx = document.getElementById('history-chart').getContext('2d');
+            
+            if(chartInstance) chartInstance.destroy();
+
+            // ラベルの作成（初期状態、第1、第2...）
+            let labels = ['初期アセット'];
+            for(let i=1; i<=selectedQuestions.length; i++) labels.push(`第${i}R終了`);
+
+            // データセット組み立て
+            let datasets = [];
+            const colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#14b8a6', '#f97316'];
+            let cIdx = 0;
+
+            for(let id in playersData) {
+                const p = playersData[id];
+                datasets.push({
+                    label: p.name,
+                    data: p.history,
+                    borderColor: colors[cIdx % colors.length],
+                    backgroundColor: colors[cIdx % colors.length],
+                    borderWidth: 3,
+                    fill: false,
+                    tension: 0.1
+                });
+                cIdx++;
+            }
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: false, title: { display: true, text: '所持ポイント' } }
+                    }
+                }
+            });
+        }
+
+
+        /** ========================================================
+         * 参加者側クライアントUI/インタラクション処理
+         * ======================================================== */
+        let myPoints = 1000;
+        let selectedPool = null;
+        let selectedOdds = 1;
+        let pickedBoats = [];
+        let requiredBoatCount = 0;
+        let remainRacesForPlayer = 0;
+        let isLastRaceForPlayer = false;
+
+        function initPlayerPeer() {
+            myConnection = new Peer();
+            myConnection.on('open', (id) => { console.log('Player connection opened:', id); });
+        }
+
+        function joinGame() {
+            const name = document.getElementById('player-name-input').value;
+            if(!name.trim()) return alert("名前を正確に入力してください。");
+            
+            const conn = myConnection.connect(roomID);
+            conn.on('open', () => {
+                peer = conn; 
+                peer.send({ type: 'join', name: name });
+                showPage('player-wait');
+
+                peer.on('data', (data) => {
+                    if (data.type === 'page') {
+                        showPage(data.page);
+                    } else if (data.type === 'welcome') {
+                        myPoints = data.points;
+                        updatePointsLabelUI();
+                    } else if (data.type === 'request_bet') {
+                        remainRacesForPlayer = data.remainRaces;
+                        isLastRaceForPlayer = data.isLast;
+                        
+                        document.getElementById('lbl-remain-races').innerText = remainRacesForPlayer + " レース";
+                        resetBettingForm();
+                        showPage('player-betting');
+                    }
+                });
+            });
+        }
+
+        function updatePointsLabelUI() {
+            document.querySelectorAll('.lbl-my-points').forEach(el => el.innerText = myPoints);
+        }
+
+        function resetBettingForm() {
+            selectedPool = null;
+            pickedBoats = [];
+            requiredBoatCount = 0;
+            document.querySelectorAll('.select-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('lbl-ordered-selection-flow').innerText = "";
+            document.getElementById('player-target-instruction').innerText = "上から賭け方の種類を選択してください。";
+            
+            // 賭け金上限の計算式（最低1, 最高 = 自分のポイント - 残り問題数 + 1）
+            // 100ptあって残り5問（今回含む）なら、他4問のために4pt残すので、最大96pt。
+            // 最後の問題なら制限なしで全額。
+            let maxBet = 1;
+            if(isLastRaceForPlayer) {
+                maxBet = myPoints;
+            } else {
+                maxBet = myPoints - (remainRacesForPlayer - 1);
+            }
+            if(maxBet < 1) maxBet = 1;
+
+            const rangeInput = document.getElementById('range-bet-points');
+            const numInput = document.getElementById('num-bet-points');
+            rangeInput.max = maxBet;
+            rangeInput.value = 1;
+            numInput.max = maxBet;
+            numInput.value = 1;
+
+            syncBetPoints('range');
+        }
+
+        function selectPoolType(type, odds) {
+            selectedPool = type;
+            selectedOdds = odds;
+            pickedBoats = [];
+            
+            // ボタンのアクティブ外見変更
+            ['tan','fuk2','fuk3','tan2','tan3'].forEach(t => {
+                document.getElementById(`btn-pool-${t}`).classList.remove('selected');
+            });
+            document.getElementById(`btn-pool-${type}`).classList.add('selected');
+
+            // 必要艇数のマッピング
+            if(type === 'tan') { requiredBoatCount = 1; document.getElementById('player-target-instruction').innerText = "1着になる艇を1つ選んでください。"; }
+            else if(type === 'fuk2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "順不同で2位以内に入る艇を2つ選んでください。"; }
+            else if(type === 'fuk3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "順不同で3位以内に入る艇を3つ選んでください。"; }
+            else if(type === 'tan2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "1着→2着の順に2つ選んでください。"; }
+            else if(type === 'tan3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "1着→2着→3着の順に3つ選んでください。"; }
+
+            // 艇選択ボタンを初期化
+            for(let i=1; i<=6; i++) document.getElementById(`btn-pick-${i}`).classList.remove('selected');
+            updateOrderedFlowLabel();
+            calculateSimulatedPoints();
+        }
+
+        function toggleBoatPick(num) {
+            if(!selectedPool) { alert("先に賭け方の種類を選んでください。"); return; }
+
+            const idx = pickedBoats.indexOf(num);
+            if(idx > -1) {
+                // 既に選択されていれば解除
+                pickedBoats.splice(idx, 1);
+                document.getElementById(`btn-pick-${num}`).classList.remove('selected');
+            } else {
+                // 新規選択（上限に達していなければ追加）
+                if(pickedBoats.length >= requiredBoatCount) {
+                    // 単勝などの場合は入れ替え、連勝単式などの場合は一度解除を促す
+                    if(requiredBoatCount === 1) {
+                        const old = pickedBoats.shift();
+                        document.getElementById(`btn-pick-${old}`).classList.remove('selected');
+                    } else {
+                        alert(`この賭け方で選択できるのは ${requiredBoatCount} 艇までです。`);
+                        return;
+                    }
+                }
+                pickedBoats.push(num);
+                document.getElementById(`btn-pick-${num}`).classList.add('selected');
+            }
+
+            updateOrderedFlowLabel();
+            calculateSimulatedPoints();
+        }
+
+        function updateOrderedFlowLabel() {
+            const el = document.getElementById('lbl-ordered-selection-flow');
+            if(pickedBoats.length === 0) { el.innerText = ""; return; }
+            
+            if(selectedPool === 'tan2' || selectedPool === 'tan3') {
+                let str = pickedBoats.map((b, i) => `${i+1}着:【${b}番艇】`).join(' → ');
+                el.innerText = str;
+            } else {
+                el.innerText = `選択中: ${pickedBoats.join(', ')}`;
+            }
+        }
+
+        function syncBetPoints(trigger) {
+            const rangeInput = document.getElementById('range-bet-points');
+            const numInput = document.getElementById('num-bet-points');
+            
+            let val = 1;
+            if(trigger === 'range') {
+                val = parseInt(rangeInput.value);
+                numInput.value = val;
+            } else {
+                val = parseInt(numInput.value) || 1;
+                // バリデーションチェック制限
+                let maxLimit = parseInt(numInput.max);
+                if(val > maxLimit) val = maxLimit;
+                if(val < 1) val = 1;
+                numInput.value = val;
+                rangeInput.value = val;
+            }
+
+            calculateSimulatedPoints();
+        }
+
+        function calculateSimulatedPoints() {
+            const betPts = parseInt(document.getElementById('num-bet-points').value) || 0;
+            
+            // 不的中時：所持ポイント - 賭けポイント
+            let loseTotal = myPoints - betPts;
+            // 的中時：(所持ポイント - 賭けポイント) + (賭けポイント * 倍率)
+            let winTotal = (myPoints - betPts) + (betPts * selectedOdds);
+
+            document.getElementById('sim-win-pts').innerText = winTotal;
+            document.getElementById('sim-lose-pts').innerText = loseTotal;
+        }
+
+        function lockAndConfirmBet() {
+            if(!selectedPool) return alert("賭け方の種類が選択されていません。");
+            if(pickedBoats.length !== requiredBoatCount) return alert(`対象の艇を ${requiredBoatCount} つ選択してください。`);
+
+            const betPts = parseInt(document.getElementById('num-bet-points').value) || 0;
+            let maxLimit = parseInt(document.getElementById('num-bet-points').max);
+            
+            // ルールを破るポイント数だった場合の警告
+            if(betPts > maxLimit || betPts < 1) {
+                alert(`ポイントの設定ルール違反です！\n今回の賭け金の上限は ${maxLimit} pt です。(次回以降のレースのために最低限のポイントを残す必要があります)`);
+                return;
+            }
+
+            const confirmText = `【最終確認】\n賭け方: ${POOL_NAMES[selectedPool]}\n選択艇: ${pickedBoats.join(', ')}\n賭けポイント: ${betPts} pt\n\nこのオッズで確定してホストへ送信しますか？`;
+            if(!confirm(confirmText)) return;
+
+            // 確定データをホストに送信
+            peer.send({
+                type: 'submit_bet',
+                bet: {
+                    type: selectedPool,
+                    boats: pickedBoats,
+                    pts: betPts,
+                    odds: selectedOdds
+                }
+            });
+
+            // 参加者のローカル表示用所持ポイントを仮引き
+            myPoints = myPoints - betPts;
+            updatePointsLabelUI();
+            // 一旦手元を戻す（結果画面受信で正式同期するため）
+            myPoints = myPoints + betPts; 
+
+            document.getElementById('player-wait-bet-info').style.display = "block";
+            document.getElementById('player-wait-bet-info').innerText = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt`;
+
+            showPage('player-wait');
+        }
+    </script>
+</body>
+</html>
