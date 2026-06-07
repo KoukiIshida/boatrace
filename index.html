@@ -150,8 +150,9 @@
          ホスト側：問題提示＆オッズ確定状況 (host-p4)
          ========================================== -->
     <div id="host-p4" class="page">
-        <h1 id="host-q-title">第 1 レース</h1>
-        <h3 id="host-q-text-view" style="border:none; background:#f8fafc; padding:10px; font-size:18px;"></h3>
+        <h1 id="host-q-title">第 1 レース / 全 0 レース</h1>
+        <!-- 問題文テキストをさらに大きく（26px太字）変更 -->
+        <h3 id="host-q-text-view" style="border:none; background:#f8fafc; padding:15px; font-size:26px; font-weight:bold; color:#1e3a8a; text-align:left; line-height:1.5; box-shadow:inset 0 2px 4px rgba(0,0,0,0.05); border-radius:8px;"></h3>
         
         <!-- ボート風の6択配置 -->
         <div class="boat-choices" id="host-boat-container"></div>
@@ -182,7 +183,7 @@
          ホスト側：レース本番アニメーション画面 (host-p6)
          ========================================== -->
     <div id="host-p6" class="page">
-        <h1>🚤 PIT IN / レーススタート 🚤</h1>
+        <h1 id="host-p6-title">🚤 PIT IN / レーススタート 🚤</h1>
         <canvas id="race-canvas" width="800" height="260"></canvas>
         
         <div style="text-align:center; margin:15px 0;">
@@ -201,13 +202,13 @@
          ホスト側：結果発表画面（レース毎の配当）(host-p7)
          ========================================== -->
     <div id="host-p7" class="page">
-        <h1>🏁 レース確定結果 🏁</h1>
+        <h1 id="host-p7-title">🏁 レース確定結果 🏁</h1>
         <div style="display:flex; gap:20px; justify-content:center; align-items:center; margin:15px 0;">
             <div style="font-size:36px; font-weight:bold; color:#ef4444; border:4px double #ef4444; padding:5px 20px;" id="text-final-orders">1-2-3</div>
             <div style="font-size:16px; background:#fff; padding:10px; border-radius:6px; border:1px solid #ccc; flex-grow:1;" id="text-supplementary-info">補足情報が入ります。</div>
         </div>
 
-        <h3>現在の総ポイントランキング</h3>
+        <h3>このレースでの獲得ポイントランキング</h3>
         <div id="round-ranking-container"></div>
 
         <div style="text-align:center; margin-top:25px;" id="next-action-container"></div>
@@ -299,8 +300,8 @@
         <!-- 収支シミュレーション -->
         <div style="background:#f8fafc; padding:10px; border-radius:6px; border:1px solid #cbd5e1; margin-top:10px;">
             <div style="display:flex; justify-content:space-around; font-weight:bold; text-align:center;">
-                <div style="color:#22c55e;">🎯 的中時（合計）<br><span id="sim-win-pts" style="font-size:20px;">100</span> pt</div>
-                <div style="color:#ef4444;">❌ 不定期時（合計）<br><span id="sim-lose-pts" style="font-size:20px;">100</span> pt</div>
+                <div style="color:#22c55e;">🎯 的中時の獲得ポイント<br>+ <span id="sim-win-pts" style="font-size:20px;">0</span> pt</div>
+                <div style="color:#ef4444;">❌ 不的中時の獲得ポイント<br><span id="sim-lose-pts" style="font-size:20px;">0</span> pt</div>
             </div>
         </div>
 
@@ -588,7 +589,8 @@
                             name: data.name, 
                             points: 100, 
                             history: [100], 
-                            currentBet: null 
+                            currentBet: null,
+                            lastRoundEarned: 0 // 直前レースの純粋な獲得額記録用
                         };
                         updatePlayerListUI();
                         conn.send({ type: 'welcome', points: 100 });
@@ -669,7 +671,8 @@
                 playersData[id].currentBet = null;
             }
 
-            document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex+1}レース`}`;
+            // タイトルに「/ 全〇レース」を追加
+            document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex+1}レース`} / 全 ${selectedQuestions.length} レース`;
             document.getElementById('host-q-text-view').innerText = q.text;
             
             const bContainer = document.getElementById('host-boat-container');
@@ -711,27 +714,28 @@
             let list = [];
             for(let id in playersData) {
                 const p = playersData[id];
-                let potentialTotal = p.points;
                 let betString = "未投票";
+                let potentialEarn = 0; // 的中したときに「このレースで得られる純粋なポイント」
                 
                 if(p.currentBet) {
                     const b = p.currentBet;
-                    potentialTotal = (p.points - b.pts) + (b.pts * b.odds);
-                    betString = `【${POOL_NAMES[b.type]}】 艇:[${b.boats.join(',')}] 賭金:${b.pts}pt`;
+                    potentialEarn = b.pts * b.odds;
+                    betString = `【${POOL_NAMES[b.type]}】 艇:[${b.boats.join(',')}]`;
                 }
-                list.push({ name: p.name, pTotal: potentialTotal, desc: betString });
+                list.push({ name: p.name, pEarn: potentialEarn, desc: betString });
             }
 
-            list.sort((a,b) => b.pTotal - a.pTotal);
+            // 的中時の純粋な獲得ポイント順（降順）に並べ替え
+            list.sort((a,b) => b.pEarn - a.pEarn);
 
             if(list.length === 0) {
                 container.innerHTML = "<p style='text-align:center;'>参加者がいません。</p>";
                 return;
             }
 
-            let tHtml = `<table><tr><th>順位</th><th>参加者</th><th>賭け内容</th><th>的中時の想定合計アセット</th></tr>`;
+            let tHtml = `<table><tr><th>順位</th><th>参加者</th><th>賭け内容</th><th>的中時の獲得ポイント（単体）</th></tr>`;
             list.forEach((item, index) => {
-                tHtml += `<tr><td>${index+1}</td><td><strong>${item.name}</strong></td><td>${item.desc}</td><td style="color:#22c55e; font-weight:bold;">${item.pTotal} pt</td></tr>`;
+                tHtml += `<tr><td>${index+1}</td><td><strong>${item.name}</strong></td><td>${item.desc}</td><td style="color:#22c55e; font-weight:bold;">+ ${item.pEarn} pt</td></tr>`;
             });
             tHtml += `</table>`;
             container.innerHTML = tHtml;
@@ -739,7 +743,7 @@
 
 
         /** ========================================================
-         * 2D Canvas ボートレースアニメーション制御エンジン (完全後退禁止・直線加速設計)
+         * 2D Canvas ボートレースアニメーション制御エンジン
          * ======================================================== */
         let raceAnimationId = null;
         let raceStartTimestamp = null;
@@ -750,15 +754,15 @@
 
         function goToRaceScreen() {
             changeHostScreen('host-p6');
-            
-            // 下部参加者賭け種類一覧のレンダリング (ポイント非表示・大きく種別とターゲットを明示)
+            document.getElementById('host-p6-title').innerText = `${selectedQuestions[currentPlayIndex].title || `第${currentPlayIndex+1}レース`} / 全 ${selectedQuestions.length} レース`;
+
             const bCont = document.getElementById('race-bottom-bets-container');
             bCont.innerHTML = "";
             for(let id in playersData) {
                 const p = playersData[id];
                 let bStr = "未投票";
                 if(p.currentBet) {
-                    bStr = `<span style="font-size: 18px; color: var(--primary);">【${POOL_NAMES[p.currentBet.type]}】</span> <span style="font-size: 22px; font-weight: 900; letter-spacing: 1px;">${p.currentBet.boats.join(' － ')}</span>`;
+                    bStr = `<span style="font-size: 20px; color: var(--primary); font-weight: bold;">【${POOL_NAMES[p.currentBet.type]}】</span> <span style="font-size: 24px; font-weight: 900; letter-spacing: 1px;">${p.currentBet.boats.join(' － ')}</span>`;
                 }
                 bCont.innerHTML += `
                     <div id="race-bet-card-${id}" style="background:#fff; border:2px solid #cbd5e1; padding:10px; border-radius:8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
@@ -786,14 +790,13 @@
                 let boatNum = i + 1;
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
-                // 新・タイムスケジュール完全同期マッピング
-                // 1位: 15秒, 2位: 18秒, 3位: 21秒, 4~6位: 21〜25秒の間に完全に配分
+                // タイムスケジュールの完全同期調整
+                // 1位: 15秒, 2位: 18秒, 3位: 21秒, 4~6位: 25秒
                 let targetGoalTime = 25; 
                 if (finalRank === 1) targetGoalTime = 15;
                 else if (finalRank === 2) targetGoalTime = 18;
                 else if (finalRank === 3) targetGoalTime = 21;
                 else {
-                    // 4,5,6位は21.5秒から25秒の間で等間隔に配置して全艇が25秒までにゴール
                     targetGoalTime = 21.5 + (finalRank - 4) * 1.75; 
                 }
 
@@ -808,7 +811,6 @@
                     color: ['#fff','#333','#ef4444','#3b82f6','#eab308','#22c55e'][i],
                     textColor: ['#000','#fff','#fff','#fff','#fff','#fff'][i],
                     wobbleSeed: Math.random() * 50,
-                    // 道中の最大ゆらぎ幅（進捗率ベースと掛け算することで後退を防ぐ）
                     wobbleScale: Math.random() * 20 + 35
                 });
             }
@@ -874,44 +876,33 @@
             const elapsed = (now - raceStartTimestamp) / 1000; 
             const goalX = 740;
             const startX = 60;
-            const totalDistance = goalX - startX; // 680px
+            const totalDistance = goalX - startX; 
 
             boatsState.forEach(b => {
                 if (b.goalTime !== null) return;
 
-                // 時間軸の進捗率
                 let progressRatio = elapsed / b.targetGoalTime;
                 if (progressRatio > 1.0) progressRatio = 1.0;
 
-                // 後退を絶対にさせないアルゴリズム:
-                // 進捗に合わせた「単調増加する滑らかな曲線(3次関数的イージング)」をベース位置に据える
                 let basePos = totalDistance * Math.pow(progressRatio, 1.2); 
 
-                // 道中のエキサイティングな「ゆらぎ演出（抜きつ抜かれつ）」
-                // progressRatioの乗算構造にすることで、0%から100%に向かって常に前方に引っ張られ、バックを防止
                 let wobble = 0;
                 if (progressRatio > 0.02 && progressRatio < 0.94) {
-                    // サイン波による横並びの攻防
                     wobble = Math.sin(elapsed * 3.2 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.5);
                 }
 
                 b.x = startX + basePos + wobble;
 
-                // 【最重要】ゴール手前での減速問題を解消
-                // 進捗94%を超えた瞬間から、ゆらぎ要素を綺麗に0へ減衰させつつ、
-                // スピード感を維持して一直線にゴールラインへ突っ込ませる
                 if (progressRatio >= 0.94) {
-                    let easeFactor = (1.0 - progressRatio) / 0.06; // 1.0 → 0.0
+                    let easeFactor = (1.0 - progressRatio) / 0.06; 
                     b.x = startX + basePos + (wobble * easeFactor);
                 }
 
-                // 絶対にバックしない（前フレームの座標より左にいかない）ためのフェイルセーフガード
                 if(b.lastX && b.x < b.lastX) {
                     b.x = b.lastX + 0.5; 
                 }
                 b.lastX = b.x;
 
-                // ゴール確定判定
                 if (elapsed >= b.targetGoalTime || b.x >= goalX) {
                     b.x = goalX;
                     b.goalTime = elapsed;
@@ -970,20 +961,27 @@
             changeHostScreen('host-p7');
             const q = selectedQuestions[currentPlayIndex];
             
+            document.getElementById('host-p7-title').innerText = `${q.title || `第${currentPlayIndex+1}レース`} 確定結果 / 全 ${selectedQuestions.length} レース`;
+
             const winOrders = targetOrders;
             document.getElementById('text-final-orders').innerText = winOrders.slice(0,3).join(' - ');
             document.getElementById('text-supplementary-info').innerText = q.supp || "特記事項なし";
 
             for(let id in playersData) {
                 const p = playersData[id];
+                p.lastRoundEarned = 0; // 初期化
+
                 if(p.currentBet) {
                     let isHit = checkBetIsHit(p.currentBet, winOrders);
+                    // 賭け金を消費
                     p.points -= p.currentBet.pts;
                     if(isHit) {
-                        p.points += (p.currentBet.pts * p.currentBet.odds);
+                        let gain = p.currentBet.pts * p.currentBet.odds;
+                        p.points += gain;
+                        p.lastRoundEarned = gain; // このレースで獲得した額を記憶
                     }
                 }
-                p.history.push(p.points);
+                p.history.push(p.points); // 推移用は常に合計得点
             }
 
             renderRoundRankingUI();
@@ -1011,32 +1009,34 @@
             const container = document.getElementById('round-ranking-container');
             container.innerHTML = "";
 
-            let sortedPlayers = Object.values(playersData).sort((a,b) => b.points - a.points);
+            // 「このレースでの獲得ポイント（降順）」でソート
+            let sortedPlayers = Object.values(playersData).sort((a,b) => b.lastRoundEarned - a.lastRoundEarned);
             let currentRank = 1;
             let rankCounter = 1;
-            let prevPoints = null;
+            let prevEarned = null;
 
             sortedPlayers.forEach(p => {
-                if (prevPoints === p.points) {
+                if (prevEarned === p.lastRoundEarned) {
                     p.tempRank = currentRank;
                 } else {
                     p.tempRank = rankCounter;
                     currentRank = rankCounter;
                 }
                 rankCounter++;
-                prevPoints = p.points;
+                prevEarned = p.lastRoundEarned;
             });
 
+            // 1位、2位、3位、4位以下を個別にボタン開閉トグル化
             [1, 2, 3].forEach(rNum => {
                 const rPlayers = sortedPlayers.filter(p => p.tempRank === rNum);
                 if(rPlayers.length > 0) {
                     const block = document.createElement('div');
                     block.className = 'hidden-result';
-                    block.innerText = `👑 暫定 ${rNum}位のプレイヤーを表示`;
+                    block.innerText = `👑 本レース獲得額 第 ${rNum}位のプレイヤーを表示`;
                     block.onclick = () => {
-                        let html = `<div style="background:#fff; border:2px solid var(--accent); padding:10px; border-radius:6px;"><h3>👑 暫定第 ${rNum}位</h3>`;
+                        let html = `<div style="background:#fff; border:2px solid var(--accent); padding:10px; border-radius:6px;"><h3>👑 本レース獲得額 第 ${rNum}位</h3>`;
                         rPlayers.forEach(rp => {
-                            html += `<p style="font-size:18px; margin:5px 0;"><strong>${rp.name}</strong> さん : ${rp.points} pt</p>`;
+                            html += `<p style="font-size:18px; margin:5px 0;"><strong>${rp.name}</strong> さん : <span style="color:#22c55e; font-weight:bold;">+ ${rp.lastRoundEarned} pt</span></p>`;
                         });
                         html += `</div>`;
                         block.innerHTML = html;
@@ -1054,7 +1054,7 @@
                 block.onclick = () => {
                     let html = `<div style="background:#fff; border:1px solid #ccc; padding:10px; border-radius:6px; text-align:left; max-width:400px; margin:0 auto;">`;
                     others.forEach(op => {
-                        html += `<div style="display:flex; justify-content:space-between; margin:4px 0; font-size:16px;"><span>${op.tempRank}位: ${op.name}さん</span><strong>${op.points} pt</strong></div>`;
+                        html += `<div style="display:flex; justify-content:space-between; margin:4px 0; font-size:16px;"><span>${op.tempRank}位: ${op.name}さん</span><strong style="color:#64748b;">+ ${op.lastRoundEarned} pt</strong></div>`;
                     });
                     html += `</div>`;
                     block.innerHTML = html;
@@ -1069,6 +1069,7 @@
             const container = document.getElementById('final-ranking-container');
             container.innerHTML = "";
 
+            // 最終発表は変わらず合計得点（アセット）でソート
             let sortedPlayers = Object.values(playersData).sort((a,b) => b.points - a.points);
             let currentRank = 1;
             let rankCounter = 1;
@@ -1111,7 +1112,7 @@
             
             if(chartInstance) chartInstance.destroy();
 
-            let labels = ['初期アセット'];
+            let labels = ['初期ポイント'];
             for(let i=1; i<=selectedQuestions.length; i++) labels.push(`第${i}R終了`);
 
             let datasets = [];
@@ -1139,7 +1140,7 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        y: { beginAtZero: false, title: { display: true, text: '所持ポイント' } }
+                        y: { beginAtZero: false, title: { display: true, text: '総ポイント' } }
                     }
                 }
             });
@@ -1301,8 +1302,9 @@
         function calculateSimulatedPoints() {
             const betPts = parseInt(document.getElementById('num-bet-points').value) || 0;
             
-            let loseTotal = myPoints - betPts;
-            let winTotal = (myPoints - betPts) + (betPts * selectedOdds);
+            // 的中時・不的中時ともに、このレース単体での増減数（獲得ポイント）を表示するように変更
+            let loseTotal = 0; // 外れたらそのレースでの獲得は0pt
+            let winTotal = betPts * selectedOdds; // 当たったらそのレースで「+ 〇pt」獲得
 
             document.getElementById('sim-win-pts').innerText = winTotal;
             document.getElementById('sim-lose-pts').innerText = loseTotal;
