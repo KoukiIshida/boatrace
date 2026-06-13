@@ -6,7 +6,6 @@
     <title>ボートレース風クイズ</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <!-- グラフ描画用ライブラリ -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary: #005bac; --accent: #ffcc00; --bg: #f0f4f8; --text: #333; }
@@ -87,9 +86,6 @@
 </head>
 <body>
 
-    <!-- ==========================================
-         【管理ページ】クイズ事前登録 (host-p1)
-         ========================================== -->
     <div id="host-p1" class="page">
         <h1>【管理ページ】ボートレース風クイズ登録</h1>
         
@@ -116,9 +112,6 @@
         <button onclick="saveAllData()" style="width: 100%; font-size: 20px; padding: 15px;">💾 保存してスタート画面へ</button>
     </div>
 
-    <!-- ==========================================
-         参加者待機室 (host-p2)
-         ========================================== -->
     <div id="host-p2" class="page">
         <h1>ボートレース風クイズ 参加者待機室</h1>
         <div id="qr-container"></div>
@@ -134,9 +127,6 @@
         </div>
     </div>
 
-    <!-- ==========================================
-         ルール説明画面 (host-p3)
-         ========================================== -->
     <div id="host-p3" class="page">
         <h1>📋 レースルール説明</h1>
         <div id="display-rule-content" style="padding:15px; border:1px solid #ccc; background:#fff; border-radius:6px; margin-bottom:15px;"></div>
@@ -146,15 +136,10 @@
         </div>
     </div>
 
-    <!-- ==========================================
-         ホスト側：問題提示＆オッズ確定状況 (host-p4)
-         ========================================== -->
     <div id="host-p4" class="page">
         <h1 id="host-q-title">第 1 レース / 全 0 レース</h1>
-        <!-- 問題文テキストをさらに大きく（26px太字）変更 -->
         <h3 id="host-q-text-view" style="border:none; background:#f8fafc; padding:15px; font-size:26px; font-weight:bold; color:#1e3a8a; text-align:left; line-height:1.5; box-shadow:inset 0 2px 4px rgba(0,0,0,0.05); border-radius:8px;"></h3>
         
-        <!-- ボート風の6択配置 -->
         <div class="boat-choices" id="host-boat-container"></div>
         
         <hr>
@@ -167,9 +152,6 @@
         </div>
     </div>
 
-    <!-- ==========================================
-         ホスト側：みなさんの結果発表画面 (host-p5)
-         ========================================== -->
     <div id="host-p5" class="page">
         <h1 id="host-p5-title">みなさんの予想（正解時高得点順）</h1>
         <div id="all-bets-ranking-container"></div>
@@ -179,9 +161,6 @@
         </div>
     </div>
 
-    <!-- ==========================================
-         ホスト側：レース本番アニメーション画面 (host-p6)
-         ========================================== -->
     <div id="host-p6" class="page">
         <h1 id="host-p6-title">🚤 PIT IN / レーススタート 🚤</h1>
         <canvas id="race-canvas" width="800" height="260"></canvas>
@@ -198,9 +177,6 @@
         </div>
     </div>
 
-    <!-- ==========================================
-         ホスト側：結果発表画面（レース毎の配当）(host-p7)
-         ========================================== -->
     <div id="host-p7" class="page">
         <h1 id="host-p7-title">🏁 レース確定結果 🏁</h1>
         <div style="display:flex; gap:20px; justify-content:center; align-items:center; margin:15px 0;">
@@ -214,9 +190,6 @@
         <div style="text-align:center; margin-top:25px;" id="next-action-container"></div>
     </div>
 
-    <!-- ==========================================
-         ホスト側：最終結果発表（総決算） (host-final)
-         ========================================== -->
     <div id="host-final" class="page">
         <h1>🏆 最終結果発表（グランドフィナーレ） 🏆</h1>
         <div id="final-ranking-container"></div>
@@ -227,9 +200,6 @@
         </div>
     </div>
 
-    <!-- ==========================================
-         ホスト側：おまけ（グラフ表示画面）(host-graph)
-         ========================================== -->
     <div id="host-graph" class="page">
         <h1>📊 総資産推移グラフ（決算）</h1>
         <div style="width:100%; max-height:400px; background:#fff; padding:10px; border-radius:8px;">
@@ -241,18 +211,14 @@
     </div>
 
 
-    <!-- ==========================================
-         【参加者ページ】エントリ・ゲームプレイ
-         ========================================== -->
-    <!-- ニックネーム登録 -->
     <div id="player-entry" class="page">
         <h2>ボートレース風クイズに参加</h2>
         <p style="text-align:center;">ニックネームを入力してピットインしてください。</p>
+        <div id="lbl-reconnecting" style="display:none; color:#ef4444; text-align:center; font-weight:bold; margin-bottom:10px;">⏳ 自動再接続を試みています...</div>
         <input type="text" id="player-name-input" placeholder="ニックネームを入力してください" style="font-size:18px; text-align:center;">
         <button onclick="joinGame()" style="width:100%; font-size:18px; padding:12px;">ニックネームを登録</button>
     </div>
 
-    <!-- 待機画面 -->
     <div id="player-wait" class="page" style="text-align:center;">
         <div class="points-box" style="font-size:18px; margin-bottom:20px;">
             あなたの所持ポイント: <span class="lbl-my-points">100</span> pt
@@ -262,7 +228,6 @@
         <div id="player-wait-bet-info" style="margin-top:20px; font-weight:bold; background:#e2e8f0; padding:15px; border-radius:6px; display:none;"></div>
     </div>
 
-    <!-- 参加者投票入力画面 -->
     <div id="player-betting" class="page">
         <div class="points-box" style="display:flex; justify-content:space-between; font-size:16px;">
             <div>所持: <span class="lbl-my-points">100</span> pt</div>
@@ -297,11 +262,10 @@
             <span>pt</span>
         </div>
 
-        <!-- 収支シミュレーション -->
         <div style="background:#f8fafc; padding:10px; border-radius:6px; border:1px solid #cbd5e1; margin-top:10px;">
             <div style="display:flex; justify-content:space-around; font-weight:bold; text-align:center;">
                 <div style="color:#22c55e;">🎯 的中時の獲得ポイント<br>+ <span id="sim-win-pts" style="font-size:20px;">0</span> pt</div>
-                <div style="color:#ef4444;">❌ 不的中時の獲得ポイント<br><span id="sim-lose-pts" style="font-size:20px;">0</span> pt</div>
+                <div style="color:#ef4444;">❌ 不定期時（合計）<br><span id="sim-lose-pts" style="font-size:20px;">0</span> pt</div>
             </div>
         </div>
 
@@ -371,6 +335,7 @@
         let roomID = "";
         let playersData = {}; 
         let isHost = false;
+        let wakeLock = null; // スリープ防止用
 
         const POOL_NAMES = { tan: '単勝', fuk2: '２連複', fuk3: '３連複', tan2: '２連単', tan3: '３連単' };
 
@@ -387,6 +352,14 @@
                 roomID = roomParam;
                 showPage('player-entry');
                 initPlayerPeer();
+                
+                // リロード時：過去のセッションがあれば自動入力＆ログイン復旧を試みる
+                const savedName = sessionStorage.getItem('boat_player_name');
+                if(savedName) {
+                    document.getElementById('player-name-input').value = savedName;
+                    document.getElementById('lbl-reconnecting').style.display = 'block';
+                    setTimeout(() => { joinGame(); }, 1200); // PeerJSの準備を待って自動接続
+                }
             } else {
                 isHost = true;
                 if (!appData.questions || appData.questions.length === 0) {
@@ -585,15 +558,25 @@
                 connections[conn.peer] = conn;
                 conn.on('data', (data) => {
                     if (data.type === 'join') {
-                        playersData[conn.peer] = { 
-                            name: data.name, 
-                            points: 100, 
-                            history: [100], 
-                            currentBet: null,
-                            lastRoundEarned: 0 // 直前レースの純粋な獲得額記録用
-                        };
+                        // 既に同じニックネームのプレイヤーがいたらデータを紐付け直す（リロード対策）
+                        let existingPeerId = Object.keys(playersData).find(k => playersData[k].name === data.name);
+                        if(existingPeerId) {
+                            // 古いIDのデータを新しい接続先のIDへ引き継ぎ、古い枠は削除
+                            playersData[conn.peer] = playersData[existingPeerId];
+                            if(existingPeerId !== conn.peer) delete playersData[existingPeerId];
+                        } else {
+                            // 新規登録
+                            playersData[conn.peer] = { 
+                                name: data.name, 
+                                points: 100, 
+                                history: [100], 
+                                currentBet: null,
+                                lastRoundEarned: 0 
+                            };
+                        }
                         updatePlayerListUI();
-                        conn.send({ type: 'welcome', points: 100 });
+                        updateHostBetStatusUI();
+                        conn.send({ type: 'welcome', points: playersData[conn.peer].points });
                     } else if (data.type === 'submit_bet') {
                         if (playersData[conn.peer]) {
                             playersData[conn.peer].currentBet = data.bet;
@@ -602,10 +585,8 @@
                     }
                 });
                 conn.on('close', () => {
+                    // 通信が切れても、プレイヤーのアセット（得点）保護のためplayersDataからは即削除せず残す
                     delete connections[conn.peer];
-                    delete playersData[conn.peer];
-                    updatePlayerListUI();
-                    updateHostBetStatusUI();
                 });
             });
         }
@@ -637,7 +618,7 @@
 
         function broadcast(type, payload = {}) {
             for (let id in connections) {
-                connections[id].send({ type, ...payload });
+                try { connections[id].send({ type, ...payload }); } catch(e){}
             }
         }
 
@@ -671,7 +652,6 @@
                 playersData[id].currentBet = null;
             }
 
-            // タイトルに「/ 全〇レース」を追加
             document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex+1}レース`} / 全 ${selectedQuestions.length} レース`;
             document.getElementById('host-q-text-view').innerText = q.text;
             
@@ -715,7 +695,7 @@
             for(let id in playersData) {
                 const p = playersData[id];
                 let betString = "未投票";
-                let potentialEarn = 0; // 的中したときに「このレースで得られる純粋なポイント」
+                let potentialEarn = 0; 
                 
                 if(p.currentBet) {
                     const b = p.currentBet;
@@ -725,7 +705,6 @@
                 list.push({ name: p.name, pEarn: potentialEarn, desc: betString });
             }
 
-            // 的中時の純粋な獲得ポイント順（降順）に並べ替え
             list.sort((a,b) => b.pEarn - a.pEarn);
 
             if(list.length === 0) {
@@ -778,7 +757,6 @@
             racePhase = 'ready';
             finishedCount = 0;
             const q = selectedQuestions[currentPlayIndex];
-            
             targetOrders = q.ans.split(',').map(v => parseInt(v.trim())); 
 
             initBoatsGraphics();
@@ -790,8 +768,6 @@
                 let boatNum = i + 1;
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
-                // タイムスケジュールの完全同期調整
-                // 1位: 15秒, 2位: 18秒, 3位: 21秒, 4~6位: 25秒
                 let targetGoalTime = 25; 
                 if (finalRank === 1) targetGoalTime = 15;
                 else if (finalRank === 2) targetGoalTime = 18;
@@ -969,19 +945,18 @@
 
             for(let id in playersData) {
                 const p = playersData[id];
-                p.lastRoundEarned = 0; // 初期化
+                p.lastRoundEarned = 0; 
 
                 if(p.currentBet) {
                     let isHit = checkBetIsHit(p.currentBet, winOrders);
-                    // 賭け金を消費
                     p.points -= p.currentBet.pts;
                     if(isHit) {
                         let gain = p.currentBet.pts * p.currentBet.odds;
                         p.points += gain;
-                        p.lastRoundEarned = gain; // このレースで獲得した額を記憶
+                        p.lastRoundEarned = gain; 
                     }
                 }
-                p.history.push(p.points); // 推移用は常に合計得点
+                p.history.push(p.points); 
             }
 
             renderRoundRankingUI();
@@ -1009,7 +984,6 @@
             const container = document.getElementById('round-ranking-container');
             container.innerHTML = "";
 
-            // 「このレースでの獲得ポイント（降順）」でソート
             let sortedPlayers = Object.values(playersData).sort((a,b) => b.lastRoundEarned - a.lastRoundEarned);
             let currentRank = 1;
             let rankCounter = 1;
@@ -1026,7 +1000,6 @@
                 prevEarned = p.lastRoundEarned;
             });
 
-            // 1位、2位、3位、4位以下を個別にボタン開閉トグル化
             [1, 2, 3].forEach(rNum => {
                 const rPlayers = sortedPlayers.filter(p => p.tempRank === rNum);
                 if(rPlayers.length > 0) {
@@ -1069,7 +1042,6 @@
             const container = document.getElementById('final-ranking-container');
             container.innerHTML = "";
 
-            // 最終発表は変わらず合計得点（アセット）でソート
             let sortedPlayers = Object.values(playersData).sort((a,b) => b.points - a.points);
             let currentRank = 1;
             let rankCounter = 1;
@@ -1167,12 +1139,26 @@
             const name = document.getElementById('player-name-input').value;
             if(!name.trim()) return alert("名前を正確に入力してください。");
             
+            // スマホスリープ防止機能の起動（サポートしているブラウザのみ）
+            if ('wakeLock' in navigator) {
+                try {
+                    navigator.wakeLock.request('screen').then(lock => { wakeLock = lock; });
+                } catch (err) { console.log("WakeLock error", err); }
+            }
+
+            // セッションにニックネームを保存（リロード対策）
+            sessionStorage.setItem('boat_player_name', name.trim());
+            document.getElementById('lbl-reconnecting').style.display = 'none';
+
             const conn = myConnection.connect(roomID);
+            
+            // ホストへ接続が成功したとき
             conn.on('open', () => {
                 peer = conn; 
                 peer.send({ type: 'join', name: name });
                 showPage('player-wait');
 
+                // 通信データ受信イベント
                 peer.on('data', (data) => {
                     if (data.type === 'page') {
                         showPage(data.page);
@@ -1188,6 +1174,12 @@
                         showPage('player-betting');
                     }
                 });
+            });
+
+            // 万が一ホスト側と切れてしまったら、数秒後に自動リトライする安全機構
+            conn.on('close', () => {
+                console.log("切断を検知しました。再接続を試みます。");
+                setTimeout(() => { joinGame(); }, 2000);
             });
         }
 
@@ -1302,9 +1294,8 @@
         function calculateSimulatedPoints() {
             const betPts = parseInt(document.getElementById('num-bet-points').value) || 0;
             
-            // 的中時・不的中時ともに、このレース単体での増減数（獲得ポイント）を表示するように変更
-            let loseTotal = 0; // 外れたらそのレースでの獲得は0pt
-            let winTotal = betPts * selectedOdds; // 当たったらそのレースで「+ 〇pt」獲得
+            let loseTotal = 0; 
+            let winTotal = betPts * selectedOdds; 
 
             document.getElementById('sim-win-pts').innerText = winTotal;
             document.getElementById('sim-lose-pts').innerText = loseTotal;
