@@ -335,7 +335,7 @@
         let roomID = "";
         let playersData = {}; 
         let isHost = false;
-        let wakeLock = null; // スリープ防止用
+        let wakeLock = null; 
 
         const POOL_NAMES = { tan: '単勝', fuk2: '２連複', fuk3: '３連複', tan2: '２連単', tan3: '３連単' };
 
@@ -353,12 +353,11 @@
                 showPage('player-entry');
                 initPlayerPeer();
                 
-                // リロード時：過去のセッションがあれば自動入力＆ログイン復旧を試みる
                 const savedName = sessionStorage.getItem('boat_player_name');
                 if(savedName) {
                     document.getElementById('player-name-input').value = savedName;
                     document.getElementById('lbl-reconnecting').style.display = 'block';
-                    setTimeout(() => { joinGame(); }, 1200); // PeerJSの準備を待って自動接続
+                    setTimeout(() => { joinGame(); }, 1200); 
                 }
             } else {
                 isHost = true;
@@ -558,14 +557,11 @@
                 connections[conn.peer] = conn;
                 conn.on('data', (data) => {
                     if (data.type === 'join') {
-                        // 既に同じニックネームのプレイヤーがいたらデータを紐付け直す（リロード対策）
                         let existingPeerId = Object.keys(playersData).find(k => playersData[k].name === data.name);
                         if(existingPeerId) {
-                            // 古いIDのデータを新しい接続先のIDへ引き継ぎ、古い枠は削除
                             playersData[conn.peer] = playersData[existingPeerId];
                             if(existingPeerId !== conn.peer) delete playersData[existingPeerId];
                         } else {
-                            // 新規登録
                             playersData[conn.peer] = { 
                                 name: data.name, 
                                 points: 100, 
@@ -585,7 +581,6 @@
                     }
                 });
                 conn.on('close', () => {
-                    // 通信が切れても、プレイヤーのアセット（得点）保護のためplayersDataからは即削除せず残す
                     delete connections[conn.peer];
                 });
             });
@@ -652,6 +647,7 @@
                 playersData[id].currentBet = null;
             }
 
+            document.getElementById('host-get-points-style-txt');
             document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex+1}レース`} / 全 ${selectedQuestions.length} レース`;
             document.getElementById('host-q-text-view').innerText = q.text;
             
@@ -722,7 +718,7 @@
 
 
         /** ========================================================
-         * 2D Canvas ボートレースアニメーション制御エンジン
+         * 2D Canvas ボートレースアニメーション制御エンジン (盛り上がり大逆転機能搭載版)
          * ======================================================== */
         let raceAnimationId = null;
         let raceStartTimestamp = null;
@@ -764,16 +760,36 @@
 
         function initBoatsGraphics() {
             boatsState = [];
+            
+            // 2レース目以降、大逆転劇を発生させるかを決定 (2位、または3位になるボートのいずれかを「追い込み型」にする)
+            // 毎回同じにならないよう、2R以降はランダムに「2位が追い上げるパターン」「3位が追い上げるパターン」「両方追い上げるパターン」に分岐
+            let rushTargetRank = 0; 
+            if (currentPlayIndex > 0) {
+                let randType = Math.random();
+                if (randType < 0.4) rushTargetRank = 2; // 2位の艇が最後にごぼう抜き
+                else if (randType < 0.8) rushTargetRank = 3; // 3位の艇が最後にごぼう抜き
+                else rushTargetRank = 99; // 2位・3位の両方が道中出遅れて最後に大外から突っ込んでくる超神展開
+            }
+
             for(let i=0; i<6; i++) {
                 let boatNum = i + 1;
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
+                // 新・目標到着スケジュール (1位:15秒, 2位:18秒, 3位:21秒, 4~6位:25秒)
                 let targetGoalTime = 25; 
                 if (finalRank === 1) targetGoalTime = 15;
                 else if (finalRank === 2) targetGoalTime = 18;
                 else if (finalRank === 3) targetGoalTime = 21;
                 else {
                     targetGoalTime = 21.5 + (finalRank - 4) * 1.75; 
+                }
+
+                // 追い込み演出対象ボートか判定
+                let isCloserBoat = false;
+                if ((finalRank === 2 && rushTargetRank === 2) || 
+                    (finalRank === 3 && rushTargetRank === 3) || 
+                    ((finalRank === 2 || finalRank === 3) && rushTargetRank === 99)) {
+                    isCloserBoat = true;
                 }
 
                 boatsState.push({
@@ -787,7 +803,9 @@
                     color: ['#fff','#333','#ef4444','#3b82f6','#eab308','#22c55e'][i],
                     textColor: ['#000','#fff','#fff','#fff','#fff','#fff'][i],
                     wobbleSeed: Math.random() * 50,
-                    wobbleScale: Math.random() * 20 + 35
+                    wobbleScale: Math.random() * 20 + 35,
+                    isCloser: isCloserBoat, // 最後の直線追い上げフラグ
+                    lastX: 30
                 });
             }
             drawRaceCanvas();
@@ -860,25 +878,47 @@
                 let progressRatio = elapsed / b.targetGoalTime;
                 if (progressRatio > 1.0) progressRatio = 1.0;
 
-                let basePos = totalDistance * Math.pow(progressRatio, 1.2); 
+                let basePos = 0;
 
+                // 追い込み型(2レース目以降の対象艇)の特殊軌道エンジン
+                if (b.isCloser) {
+                    if (progressRatio < 0.70) {
+                        // 前半70%まではわざとかなり遅らせ、4位〜5位集団に沈ませておく(進捗を抑制)
+                        basePos = totalDistance * Math.pow(progressRatio, 1.8) * 0.75;
+                    } else {
+                        // 残り30%（最後の直線）から一気に急激に加速（1.8乗から一気にまくりあげる高次イージング曲線に接続）
+                        // これによりラスト数秒で、前にいたボートをすさまじい速度で抜き去ります。
+                        let t = (progressRatio - 0.70) / 0.30; // 0.0 〜 1.0
+                        let startAt70 = totalDistance * Math.pow(0.70, 1.8) * 0.75;
+                        basePos = startAt70 + (totalDistance - startAt70) * Math.pow(t, 2.5);
+                    }
+                } else {
+                    // 通常ボートの滑らかなイージング
+                    basePos = totalDistance * Math.pow(progressRatio, 1.2); 
+                }
+
+                // 道中のエキサイティングなゆらぎ演出
                 let wobble = 0;
                 if (progressRatio > 0.02 && progressRatio < 0.94) {
                     wobble = Math.sin(elapsed * 3.2 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.5);
                 }
 
+                // 座標決定
                 b.x = startX + basePos + wobble;
 
+                // ゴール手前6%からは確実に指定順位でゴールラインをぶち抜く調整
                 if (progressRatio >= 0.94) {
                     let easeFactor = (1.0 - progressRatio) / 0.06; 
                     b.x = startX + basePos + (wobble * easeFactor);
                 }
 
-                if(b.lastX && b.x < b.lastX) {
+                // 絶対に後退（バック）させないガード処理
+                if (b.lastX && b.x < b.lastX) {
                     b.x = b.lastX + 0.5; 
                 }
                 b.lastX = b.x;
 
+                // ゴール到達
                 if (elapsed >= b.targetGoalTime || b.x >= goalX) {
                     b.x = goalX;
                     b.goalTime = elapsed;
@@ -1139,26 +1179,22 @@
             const name = document.getElementById('player-name-input').value;
             if(!name.trim()) return alert("名前を正確に入力してください。");
             
-            // スマホスリープ防止機能の起動（サポートしているブラウザのみ）
             if ('wakeLock' in navigator) {
                 try {
                     navigator.wakeLock.request('screen').then(lock => { wakeLock = lock; });
                 } catch (err) { console.log("WakeLock error", err); }
             }
 
-            // セッションにニックネームを保存（リロード対策）
             sessionStorage.setItem('boat_player_name', name.trim());
             document.getElementById('lbl-reconnecting').style.display = 'none';
 
             const conn = myConnection.connect(roomID);
             
-            // ホストへ接続が成功したとき
             conn.on('open', () => {
                 peer = conn; 
                 peer.send({ type: 'join', name: name });
                 showPage('player-wait');
 
-                // 通信データ受信イベント
                 peer.on('data', (data) => {
                     if (data.type === 'page') {
                         showPage(data.page);
@@ -1176,7 +1212,6 @@
                 });
             });
 
-            // 万が一ホスト側と切れてしまったら、数秒後に自動リトライする安全機構
             conn.on('close', () => {
                 console.log("切断を検知しました。再接続を試みます。");
                 setTimeout(() => { joinGame(); }, 2000);
@@ -1196,28 +1231,19 @@
             document.getElementById('player-target-instruction').innerText = "上から賭け方の種類を選択してください。";
             
             let maxBet = 1;
-            if(isLastRaceForPlayer) {
-                maxBet = myPoints;
-            } else {
-                maxBet = myPoints - (remainRacesForPlayer - 1);
-            }
+            if(isLastRaceForPlayer) {maxBet = myPoints;} else {maxBet = myPoints - (remainRacesForPlayer - 1);}
             if(maxBet < 1) maxBet = 1;
 
             const rangeInput = document.getElementById('range-bet-points');
             const numInput = document.getElementById('num-bet-points');
-            rangeInput.max = maxBet;
-            rangeInput.value = 1;
-            numInput.max = maxBet;
-            numInput.value = 1;
+            rangeInput.max = maxBet; rangeInput.value = 1;
+            numInput.max = maxBet; numInput.value = 1;
 
             syncBetPoints('range');
         }
 
         function selectPoolType(type, odds) {
-            selectedPool = type;
-            selectedOdds = odds;
-            pickedBoats = [];
-            
+            selectedPool = type; selectedOdds = odds; pickedBoats = [];
             ['tan','fuk2','fuk3','tan2','tan3'].forEach(t => {
                 document.getElementById(`btn-pool-${t}`).classList.remove('selected');
             });
@@ -1230,13 +1256,11 @@
             else if(type === 'tan3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "1着→2着→3着の順に3つ選んでください。"; }
 
             for(let i=1; i<=6; i++) document.getElementById(`btn-pick-${i}`).classList.remove('selected');
-            updateOrderedFlowLabel();
-            calculateSimulatedPoints();
+            updateOrderedFlowLabel(); calculateSimulatedPoints();
         }
 
         function toggleBoatPick(num) {
             if(!selectedPool) { alert("先に賭け方の種類を選んでください。"); return; }
-
             const idx = pickedBoats.indexOf(num);
             if(idx > -1) {
                 pickedBoats.splice(idx, 1);
@@ -1247,25 +1271,20 @@
                         const old = pickedBoats.shift();
                         document.getElementById(`btn-pick-${old}`).classList.remove('selected');
                     } else {
-                        alert(`この賭け方で選択できるのは ${requiredBoatCount} 艇までです。`);
-                        return;
+                        alert(`この賭け方で選択できるのは ${requiredBoatCount} 艇までです。`); return;
                     }
                 }
                 pickedBoats.push(num);
                 document.getElementById(`btn-pick-${num}`).classList.add('selected');
             }
-
-            updateOrderedFlowLabel();
-            calculateSimulatedPoints();
+            updateOrderedFlowLabel(); calculateSimulatedPoints();
         }
 
         function updateOrderedFlowLabel() {
             const el = document.getElementById('lbl-ordered-selection-flow');
             if(pickedBoats.length === 0) { el.innerText = ""; return; }
-            
             if(selectedPool === 'tan2' || selectedPool === 'tan3') {
-                let str = pickedBoats.map((b, i) => `${i+1}着:【${b}番艇】`).join(' → ');
-                el.innerText = str;
+                el.innerText = pickedBoats.map((b, i) => `${i+1}着:【${b}番艇】`).join(' → ');
             } else {
                 el.innerText = `選択中: ${pickedBoats.join(', ')}`;
             }
@@ -1274,65 +1293,38 @@
         function syncBetPoints(trigger) {
             const rangeInput = document.getElementById('range-bet-points');
             const numInput = document.getElementById('num-bet-points');
-            
             let val = 1;
-            if(trigger === 'range') {
-                val = parseInt(rangeInput.value);
-                numInput.value = val;
-            } else {
+            if(trigger === 'range') { val = parseInt(rangeInput.value); numInput.value = val; } 
+            else {
                 val = parseInt(numInput.value) || 1;
                 let maxLimit = parseInt(numInput.max);
-                if(val > maxLimit) val = maxLimit;
-                if(val < 1) val = 1;
-                numInput.value = val;
-                rangeInput.value = val;
+                if(val > maxLimit) val = maxLimit; if(val < 1) val = 1;
+                numInput.value = val; rangeInput.value = val;
             }
-
             calculateSimulatedPoints();
         }
 
         function calculateSimulatedPoints() {
             const betPts = parseInt(document.getElementById('num-bet-points').value) || 0;
-            
-            let loseTotal = 0; 
-            let winTotal = betPts * selectedOdds; 
-
-            document.getElementById('sim-win-pts').innerText = winTotal;
-            document.getElementById('sim-lose-pts').innerText = loseTotal;
+            document.getElementById('sim-win-pts').innerText = betPts * selectedOdds;
+            document.getElementById('sim-lose-pts').innerText = 0;
         }
 
         function lockAndConfirmBet() {
             if(!selectedPool) return alert("賭け方の種類が選択されていません。");
             if(pickedBoats.length !== requiredBoatCount) return alert(`対象の艇を ${requiredBoatCount} つ選択してください。`);
-
             const betPts = parseInt(document.getElementById('num-bet-points').value) || 0;
             let maxLimit = parseInt(document.getElementById('num-bet-points').max);
             
             if(betPts > maxLimit || betPts < 1) {
-                alert(`ポイントの設定ルール違反です！\n今回の賭け金の上限は ${maxLimit} pt です。(次回以降のレースのために最低限のポイントを残す必要があります)`);
-                return;
+                alert(`ポイントの設定ルール違反です！\n今回の賭け金の上限は ${maxLimit} pt です。(次回以降のレースのために最低限のポイントを残す必要があります)`); return;
             }
+            if(!confirm(`【最終確認】\n賭け方: ${POOL_NAMES[selectedPool]}\n選択艇: ${pickedBoats.join(', ')}\n賭けポイント: ${betPts} pt\n\nこのオッズで確定してホストへ送信しますか？`)) return;
 
-            const confirmText = `【最終確認】\n賭け方: ${POOL_NAMES[selectedPool]}\n選択艇: ${pickedBoats.join(', ')}\n賭けポイント: ${betPts} pt\n\nこのオッズで確定してホストへ送信しますか？`;
-            if(!confirm(confirmText)) return;
-
-            peer.send({
-                type: 'submit_bet',
-                bet: {
-                    type: selectedPool,
-                    boats: pickedBoats,
-                    pts: betPts,
-                    odds: selectedOdds
-                }
-            });
-
-            myPoints = myPoints - betPts;
-            updatePointsLabelUI();
-            myPoints = myPoints + betPts; 
-
+            peer.send({ type: 'submit_bet', bet: { type: selectedPool, boats: pickedBoats, pts: betPts, odds: selectedOdds } });
+            myPoints = myPoints - betPts; updatePointsLabelUI(); myPoints = myPoints + betPts; 
             document.getElementById('player-wait-bet-info').style.display = "block";
             document.getElementById('player-wait-bet-info').innerHTML = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt`;
-
             showPage('player-wait');
         }
     </script>
