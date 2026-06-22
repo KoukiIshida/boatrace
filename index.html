@@ -100,12 +100,12 @@
         <div id="rule-editor" class="editor" contenteditable="true">ここにルールを入力...</div>
         <label>ルール説明用画像: <input type="file" id="rule-image-upload" accept="image/*"></label>
         
-        <h3>2. 問題の登録</h3>
+        <h3>2. 問題の登録 (0問目は例題枠となります)</h3>
         <button onclick="addQuestionBlock()">＋ 新しい問題を追加する</button>
         <div id="questions-container"></div>
         
         <h3>3. 出題設定と順番の指定</h3>
-        <p style="font-size:14px; color:#64748b; margin:0 0 10px 0;">※上のリストで「出題する」にチェックが入っている問題がここに並びます。出題順番を自由に設定してください。</p>
+        <p style="font-size:14px; color:#64748b; margin:0 0 10px 0;">※上のリストで「出題する」にチェックが入っている問題がここに並びます。出題順番を自由に設定してください（順番を「0」にすると例題扱いになります）。</p>
         <div id="selected-questions-list"></div>
         
         <br><hr><br>
@@ -132,7 +132,7 @@
         <div id="display-rule-content" style="padding:15px; border:1px solid #ccc; background:#fff; border-radius:6px; margin-bottom:15px;"></div>
         <div id="display-rule-img-container" style="text-align:center;"></div>
         <div style="text-align:center; margin-top:20px;">
-            <button onclick="setupQuestion(0)" style="font-size:18px; padding:10px 25px;">第1レース（1問目）へ</button>
+            <button id="btn-to-first-race" onclick="setupQuestion(0)" style="font-size:18px; padding:10px 25px;">0レース目（例題）へ</button>
         </div>
     </div>
 
@@ -221,7 +221,7 @@
 
     <div id="player-wait" class="page" style="text-align:center;">
         <div class="points-box" style="font-size:18px; margin-bottom:20px;">
-            あなたの所持ポイント: <span class="lbl-my-points">100</span> pt
+            <span id="lbl-player-mode-prefix">あなたの所持ポイント:</span> <span class="lbl-my-points">100</span> pt
         </div>
         <h2 style="color:#64748b;">ホストの画面に注目してください</h2>
         <p>レースの展開や問題は、ホストのメイン画面に表示されます。</p>
@@ -230,7 +230,7 @@
 
     <div id="player-betting" class="page">
         <div class="points-box" style="display:flex; justify-content:space-between; font-size:16px;">
-            <div>所持: <span class="lbl-my-points">100</span> pt</div>
+            <div><span id="lbl-bet-mode-prefix">所持:</span> <span class="lbl-my-points">100</span> pt</div>
             <div>残りレース数: <span id="lbl-remain-races">0</span> </div>
         </div>
 
@@ -363,6 +363,8 @@
                 isHost = true;
                 if (!appData.questions || appData.questions.length === 0) {
                     appData.questions = [];
+                    // 初期ダミー（0番を最初から例題にする）
+                    appData.questions.push({ title: '0レース目(例題)', text: '例題です。自由に賭けてみましょう！', layout: 'text', choices: Array.from({length:6}, () => ({text:'', img:null})), ans: '1,2,3,4,5,6', supp: '例題のため得点は本番に引き継がれません。', include: true, order: 0, done: false });
                     for(let i=1; i<=3; i++) appData.questions.push(createEmptyQuestionObject(i));
                 }
                 renderAdminPage();
@@ -390,14 +392,14 @@
             container.innerHTML = "";
 
             appData.questions.forEach((q, idx) => {
-                if(q.order === undefined) q.order = idx + 1; 
+                if(q.order === undefined) q.order = idx; 
 
                 const div = document.createElement('div');
                 div.className = 'question-block';
                 div.innerHTML = `
                     <div class="q-header">
                         <div class="q-header-title" onclick="toggleQDetails(${idx})">
-                            枠 ${idx + 1} - 題名: <span id="q-head-title-${idx}">${q.title || '未設定'}</span> <span style="font-size:12px; color:#64748b;">▼ クリックで詳細編集</span>
+                            枠 ${idx + 1} ${q.order===0 ? '<span style="color:#ef4444;">(例題枠)</span>':''} - 題名: <span id="q-head-title-${idx}">${q.title || '未設定'}</span> <span style="font-size:12px; color:#64748b;">▼ クリックで詳細編集</span>
                         </div>
                         <div class="q-header-ctrls">
                             <label><input type="checkbox" id="q-include-${idx}" ${q.include ? 'checked' : ''} onchange="syncHeaderCheckbox(${idx}, 'include')"> 出題する</label>
@@ -460,7 +462,7 @@
             updateSelectedListSection3();
         }
         function addQuestionBlock() {
-            appData.questions.push(createEmptyQuestionObject(appData.questions.length + 1));
+            appData.questions.push(createEmptyQuestionObject(appData.questions.length));
             renderAdminPage();
             toggleQDetails(appData.questions.length - 1);
         }
@@ -490,12 +492,12 @@
             }
 
             let html = `<table class="order-setting-table" style="max-width:500px; margin: 10px 0;">
-                            <tr><th>元の枠番</th><th>レース名</th><th>出題順（数字を入力）</th></tr>`;
+                            <tr><th>元の枠番</th><th>レース名</th><th>出題順（0で例題指定）</th></tr>`;
             targetQuestions.forEach((item) => {
                 html += `<tr>
                             <td>枠 ${item.origIdx + 1}</td>
                             <td><strong>${item.title}</strong></td>
-                            <td><input type="number" id="q-sort-order-${item.origIdx}" value="${item.qRef.order ?? (item.origIdx+1)}" onchange="updateLiveOrderNum(${item.origIdx}, this.value)"></td>
+                            <td><input type="number" id="q-sort-order-${item.origIdx}" value="${item.qRef.order ?? (item.origIdx)}" onchange="updateLiveOrderNum(${item.origIdx}, this.value)"></td>
                          </tr>`;
             });
             html += `</table>`;
@@ -572,7 +574,10 @@
                         }
                         updatePlayerListUI();
                         updateHostBetStatusUI();
-                        conn.send({ type: 'welcome', points: playersData[conn.peer].points });
+                        
+                        // 現在ホストが0レース目(例題)にいるかどうかで参加者の初期画面モードを分岐案内
+                        let isCurrentQ0 = (selectedQuestions[currentPlayIndex] && selectedQuestions[currentPlayIndex].order === 0);
+                        conn.send({ type: 'welcome', points: playersData[conn.peer].points, isExampleMode: isCurrentQ0 });
                     } else if (data.type === 'submit_bet') {
                         if (playersData[conn.peer]) {
                             playersData[conn.peer].currentBet = data.bet;
@@ -642,13 +647,23 @@
             
             currentPlayIndex = listIndex;
             const q = selectedQuestions[currentPlayIndex];
+            const isQ0 = (q.order === 0); // 0レース目(例題)フラグ
 
             for (let id in playersData) {
                 playersData[id].currentBet = null;
             }
 
-            document.getElementById('host-get-points-style-txt');
-            document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex+1}レース`} / 全 ${selectedQuestions.length} レース`;
+            // タイトルの出し分け
+            if(isQ0) {
+                document.getElementById('host-q-title').innerText = `${q.title || '0レース目(例題)'} / 本番直前体験`;
+            } else {
+                // 本番レース数が正しく計算できるように調整 (例題を除く純粋な本番問題の総数)
+                let pureRaceCount = selectedQuestions.filter(item => item.order !== 0).length;
+                // 現在の本番が何戦目かカウント
+                let currentPureIndex = selectedQuestions.slice(0, currentPlayIndex+1).filter(item => item.order !== 0).length;
+                document.getElementById('host-q-title').innerText = `${q.title || `第${currentPureIndex}レース`} / 全 ${pureRaceCount} レース`;
+            }
+
             document.getElementById('host-q-text-view').innerText = q.text;
             
             const bContainer = document.getElementById('host-boat-container');
@@ -673,12 +688,17 @@
         }
 
         function sendBetPrompt() {
-            const remainRaces = selectedQuestions.length - currentPlayIndex; 
-            const isLast = (remainRaces === 1);
+            const q = selectedQuestions[currentPlayIndex];
+            const isQ0 = (q.order === 0);
+
+            // 残りレース数のカウント（本番レースのみを対象とする）
+            let remainRaces = selectedQuestions.filter(item => item.order !== 0).length - selectedQuestions.slice(0, currentPlayIndex).filter(item => item.order !== 0).length;
+            const isLast = (remainRaces === 1 && !isQ0);
             
             broadcast('request_bet', {
                 remainRaces: remainRaces,
-                isLast: isLast
+                isLast: isLast,
+                isExampleMode: isQ0
             });
         }
 
@@ -718,7 +738,7 @@
 
 
         /** ========================================================
-         * 2D Canvas ボートレースアニメーション制御エンジン (盛り上がり大逆転機能搭載版)
+         * 2D Canvas ボートレースアニメーション制御エンジン
          * ======================================================== */
         let raceAnimationId = null;
         let raceStartTimestamp = null;
@@ -729,7 +749,16 @@
 
         function goToRaceScreen() {
             changeHostScreen('host-p6');
-            document.getElementById('host-p6-title').innerText = `${selectedQuestions[currentPlayIndex].title || `第${currentPlayIndex+1}レース`} / 全 ${selectedQuestions.length} レース`;
+            const q = selectedQuestions[currentPlayIndex];
+            const isQ0 = (q.order === 0);
+
+            if(isQ0) {
+                document.getElementById('host-p6-title').innerText = `${q.title || '0レース目(例題)'} / 体験デモ走行`;
+            } else {
+                let pureRaceCount = selectedQuestions.filter(item => item.order !== 0).length;
+                let currentPureIndex = selectedQuestions.slice(0, currentPlayIndex+1).filter(item => item.order !== 0).length;
+                document.getElementById('host-p6-title').innerText = `${q.title || `第${currentPureIndex}レース`} / 全 ${pureRaceCount} レース`;
+            }
 
             const bCont = document.getElementById('race-bottom-bets-container');
             bCont.innerHTML = "";
@@ -752,7 +781,7 @@
             
             racePhase = 'ready';
             finishedCount = 0;
-            const q = selectedQuestions[currentPlayIndex];
+            
             targetOrders = q.ans.split(',').map(v => parseInt(v.trim())); 
 
             initBoatsGraphics();
@@ -761,21 +790,19 @@
         function initBoatsGraphics() {
             boatsState = [];
             
-            // 2レース目以降、大逆転劇を発生させるかを決定 (2位、または3位になるボートのいずれかを「追い込み型」にする)
-            // 毎回同じにならないよう、2R以降はランダムに「2位が追い上げるパターン」「3位が追い上げるパターン」「両方追い上げるパターン」に分岐
+            // 例題レース(currentPlayIndexが0、またはorderが0)は通常軌道、本番の2レース目以降に大逆転劇を割り振る
             let rushTargetRank = 0; 
-            if (currentPlayIndex > 0) {
+            if (currentPlayIndex > 0 && selectedQuestions[currentPlayIndex].order !== 0) {
                 let randType = Math.random();
-                if (randType < 0.4) rushTargetRank = 2; // 2位の艇が最後にごぼう抜き
-                else if (randType < 0.8) rushTargetRank = 3; // 3位の艇が最後にごぼう抜き
-                else rushTargetRank = 99; // 2位・3位の両方が道中出遅れて最後に大外から突っ込んでくる超神展開
+                if (randType < 0.4) rushTargetRank = 2; 
+                else if (randType < 0.8) rushTargetRank = 3; 
+                else rushTargetRank = 99; 
             }
 
             for(let i=0; i<6; i++) {
                 let boatNum = i + 1;
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
-                // 新・目標到着スケジュール (1位:15秒, 2位:18秒, 3位:21秒, 4~6位:25秒)
                 let targetGoalTime = 25; 
                 if (finalRank === 1) targetGoalTime = 15;
                 else if (finalRank === 2) targetGoalTime = 18;
@@ -784,7 +811,6 @@
                     targetGoalTime = 21.5 + (finalRank - 4) * 1.75; 
                 }
 
-                // 追い込み演出対象ボートか判定
                 let isCloserBoat = false;
                 if ((finalRank === 2 && rushTargetRank === 2) || 
                     (finalRank === 3 && rushTargetRank === 3) || 
@@ -804,7 +830,7 @@
                     textColor: ['#000','#fff','#fff','#fff','#fff','#fff'][i],
                     wobbleSeed: Math.random() * 50,
                     wobbleScale: Math.random() * 20 + 35,
-                    isCloser: isCloserBoat, // 最後の直線追い上げフラグ
+                    isCloser: isCloserBoat, 
                     lastX: 30
                 });
             }
@@ -879,46 +905,35 @@
                 if (progressRatio > 1.0) progressRatio = 1.0;
 
                 let basePos = 0;
-
-                // 追い込み型(2レース目以降の対象艇)の特殊軌道エンジン
                 if (b.isCloser) {
                     if (progressRatio < 0.70) {
-                        // 前半70%まではわざとかなり遅らせ、4位〜5位集団に沈ませておく(進捗を抑制)
                         basePos = totalDistance * Math.pow(progressRatio, 1.8) * 0.75;
                     } else {
-                        // 残り30%（最後の直線）から一気に急激に加速（1.8乗から一気にまくりあげる高次イージング曲線に接続）
-                        // これによりラスト数秒で、前にいたボートをすさまじい速度で抜き去ります。
-                        let t = (progressRatio - 0.70) / 0.30; // 0.0 〜 1.0
+                        let t = (progressRatio - 0.70) / 0.30; 
                         let startAt70 = totalDistance * Math.pow(0.70, 1.8) * 0.75;
                         basePos = startAt70 + (totalDistance - startAt70) * Math.pow(t, 2.5);
                     }
                 } else {
-                    // 通常ボートの滑らかなイージング
                     basePos = totalDistance * Math.pow(progressRatio, 1.2); 
                 }
 
-                // 道中のエキサイティングなゆらぎ演出
                 let wobble = 0;
                 if (progressRatio > 0.02 && progressRatio < 0.94) {
                     wobble = Math.sin(elapsed * 3.2 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.5);
                 }
 
-                // 座標決定
                 b.x = startX + basePos + wobble;
 
-                // ゴール手前6%からは確実に指定順位でゴールラインをぶち抜く調整
                 if (progressRatio >= 0.94) {
                     let easeFactor = (1.0 - progressRatio) / 0.06; 
                     b.x = startX + basePos + (wobble * easeFactor);
                 }
 
-                // 絶対に後退（バック）させないガード処理
-                if (b.lastX && b.x < b.lastX) {
+                if(b.lastX && b.x < b.lastX) {
                     b.x = b.lastX + 0.5; 
                 }
                 b.lastX = b.x;
 
-                // ゴール到達
                 if (elapsed >= b.targetGoalTime || b.x >= goalX) {
                     b.x = goalX;
                     b.goalTime = elapsed;
@@ -976,8 +991,15 @@
         function goToResultPresentation() {
             changeHostScreen('host-p7');
             const q = selectedQuestions[currentPlayIndex];
-            
-            document.getElementById('host-p7-title').innerText = `${q.title || `第${currentPlayIndex+1}レース`} 確定結果 / 全 ${selectedQuestions.length} レース`;
+            const isQ0 = (q.order === 0);
+
+            if(isQ0) {
+                document.getElementById('host-p7-title').innerText = `${q.title || '0レース目(例題)'} 確定結果 / デモ終了`;
+            } else {
+                let pureRaceCount = selectedQuestions.filter(item => item.order !== 0).length;
+                let currentPureIndex = selectedQuestions.slice(0, currentPlayIndex+1).filter(item => item.order !== 0).length;
+                document.getElementById('host-p7-title').innerText = `${q.title || `第${currentPureIndex}レース`} 確定結果 / 全 ${pureRaceCount} レース`;
+            }
 
             const winOrders = targetOrders;
             document.getElementById('text-final-orders').innerText = winOrders.slice(0,3).join(' - ');
@@ -989,14 +1011,27 @@
 
                 if(p.currentBet) {
                     let isHit = checkBetIsHit(p.currentBet, winOrders);
-                    p.points -= p.currentBet.pts;
-                    if(isHit) {
-                        let gain = p.currentBet.pts * p.currentBet.odds;
-                        p.points += gain;
-                        p.lastRoundEarned = gain; 
+                    
+                    if(isQ0) {
+                        // 【0レース目(例題)限定ロジック】
+                        // 本番用総資産ポイント(points)の減算やhistoryへのプッシュは完全無視し、
+                        // 単体獲得ポイントのUI表示用(lastRoundEarned)だけ計算する
+                        if(isHit) {
+                            p.lastRoundEarned = p.currentBet.pts * p.currentBet.odds;
+                        }
+                    } else {
+                        // 【本番レース用の通常精算処理】
+                        p.points -= p.currentBet.pts;
+                        if(isHit) {
+                            let gain = p.currentBet.pts * p.currentBet.odds;
+                            p.points += gain;
+                            p.lastRoundEarned = gain; 
+                        }
+                        p.history.push(p.points); 
                     }
+                } else {
+                    if(!isQ0) p.history.push(p.points);
                 }
-                p.history.push(p.points); 
             }
 
             renderRoundRankingUI();
@@ -1006,9 +1041,26 @@
             
             if (currentPlayIndex + 1 < selectedQuestions.length) {
                 const nextBtn = document.createElement('button');
-                nextBtn.innerText = `次レース（第${currentPlayIndex + 2}戦）の準備へ`;
+                // 次のレースが本番第1戦かどうかで文言を調整
+                let nextQ = selectedQuestions[currentPlayIndex + 1];
+                if(nextQ.order === 1 || (isQ0 && nextQ.order !== 0)) {
+                    nextBtn.innerText = `🏁 いよいよ本番！第1レースの準備へ`;
+                    nextBtn.style.background = "#22c55e";
+                } else {
+                    nextBtn.innerText = `次レースの準備へ`;
+                }
                 nextBtn.style.fontSize = "18px";
-                nextBtn.onclick = () => setupQuestion(currentPlayIndex + 1);
+                nextBtn.onclick = () => {
+                    // もし今終えたのが0レース目(例題)なら、本番開始直前に全ユーザーのポイント状態を100に強制クリーンリセット
+                    if(isQ0) {
+                        for(let id in playersData) {
+                            playersData[id].points = 100;
+                            playersData[id].history = [100];
+                            playersData[id].lastRoundEarned = 0;
+                        }
+                    }
+                    setupQuestion(currentPlayIndex + 1);
+                };
                 actionContainer.appendChild(nextBtn);
             } else {
                 const finBtn = document.createElement('button');
@@ -1125,7 +1177,9 @@
             if(chartInstance) chartInstance.destroy();
 
             let labels = ['初期ポイント'];
-            for(let i=1; i<=selectedQuestions.length; i++) labels.push(`第${i}R終了`);
+            // グラフの軸から0R(例題)を排除して美しく集計
+            let pureRaceCount = selectedQuestions.filter(item => item.order !== 0).length;
+            for(let i=1; i<=pureRaceCount; i++) labels.push(`第${i}R終了`);
 
             let datasets = [];
             const colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#14b8a6', '#f97316'];
@@ -1169,6 +1223,7 @@
         let requiredBoatCount = 0;
         let remainRacesForPlayer = 0;
         let isLastRaceForPlayer = false;
+        let isPlayerExampleMode = false; // クライアント側の例題デモフラグ
 
         function initPlayerPeer() {
             myConnection = new Peer();
@@ -1200,12 +1255,14 @@
                         showPage(data.page);
                     } else if (data.type === 'welcome') {
                         myPoints = data.points;
+                        isPlayerExampleMode = data.isExampleMode || false;
                         updatePointsLabelUI();
                     } else if (data.type === 'request_bet') {
                         remainRacesForPlayer = data.remainRaces;
                         isLastRaceForPlayer = data.isLast;
+                        isPlayerExampleMode = data.isExampleMode || false;
                         
-                        document.getElementById('lbl-remain-races').innerText = remainRacesForPlayer + " レース";
+                        document.getElementById('lbl-remain-races').innerText = isPlayerExampleMode ? "練習(0R)" : (remainRacesForPlayer + " レース");
                         resetBettingForm();
                         showPage('player-betting');
                     }
@@ -1219,7 +1276,15 @@
         }
 
         function updatePointsLabelUI() {
-            document.querySelectorAll('.lbl-my-points').forEach(el => el.innerText = myPoints);
+            if(isPlayerExampleMode) {
+                document.getElementById('lbl-player-mode-prefix').innerText = "例題用架空資金:";
+                document.getElementById('lbl-bet-mode-prefix').innerText = "例題用資金:";
+                document.querySelectorAll('.lbl-my-points').forEach(el => el.innerText = "100");
+            } else {
+                document.getElementById('lbl-player-mode-prefix').innerText = "あなたの所持ポイント:";
+                document.getElementById('lbl-bet-mode-prefix').innerText = "所持:";
+                document.querySelectorAll('.lbl-my-points').forEach(el => el.innerText = myPoints);
+            }
         }
 
         function resetBettingForm() {
@@ -1230,8 +1295,14 @@
             document.getElementById('lbl-ordered-selection-flow').innerText = "";
             document.getElementById('player-target-instruction').innerText = "上から賭け方の種類を選択してください。";
             
-            let maxBet = 1;
-            if(isLastRaceForPlayer) {maxBet = myPoints;} else {maxBet = myPoints - (remainRacesForPlayer - 1);}
+            let maxBet = 100;
+            if(!isPlayerExampleMode) {
+                if(isLastRaceForPlayer) {
+                    maxBet = myPoints;
+                } else {
+                    maxBet = myPoints - (remainRacesForPlayer - 1);
+                }
+            }
             if(maxBet < 1) maxBet = 1;
 
             const rangeInput = document.getElementById('range-bet-points');
@@ -1239,6 +1310,7 @@
             rangeInput.max = maxBet; rangeInput.value = 1;
             numInput.max = maxBet; numInput.value = 1;
 
+            updatePointsLabelUI();
             syncBetPoints('range');
         }
 
@@ -1250,7 +1322,7 @@
             document.getElementById(`btn-pool-${type}`).classList.add('selected');
 
             if(type === 'tan') { requiredBoatCount = 1; document.getElementById('player-target-instruction').innerText = "1着になる艇を1つ選んでください。"; }
-            else if(type === 'fuk2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "順不同で2位以内に入る艇を2つ選んでください。"; }
+            else if(type === 'fuk2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "順共同で2位以内に入る艇を2つ選んでください。"; }
             else if(type === 'fuk3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "順不同で3位以内に入る艇を3つ選んでください。"; }
             else if(type === 'tan2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "1着→2着の順に2つ選んでください。"; }
             else if(type === 'tan3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "1着→2着→3着の順に3つ選んでください。"; }
@@ -1317,14 +1389,23 @@
             let maxLimit = parseInt(document.getElementById('num-bet-points').max);
             
             if(betPts > maxLimit || betPts < 1) {
-                alert(`ポイントの設定ルール違反です！\n今回の賭け金の上限は ${maxLimit} pt です。(次回以降のレースのために最低限のポイントを残す必要があります)`); return;
+                alert(`ポイントの設定ルール違反です！\n今回の賭け金の上限は ${maxLimit} pt です。`); return;
             }
-            if(!confirm(`【最終確認】\n賭け方: ${POOL_NAMES[selectedPool]}\n選択艇: ${pickedBoats.join(', ')}\n賭けポイント: ${betPts} pt\n\nこのオッズで確定してホストへ送信しますか？`)) return;
+            
+            let prefixConfirm = isPlayerExampleMode ? "【練習・例題デモ投票】\n※得点は本番に引き継がれません。\n\n" : "【最終確認】\n";
+            if(!confirm(`${prefixConfirm}賭け方: ${POOL_NAMES[selectedPool]}\n選択艇: ${pickedBoats.join(', ')}\n賭けポイント: ${betPts} pt\n\nこのオッズで確定してホストへ送信しますか？`)) return;
 
             peer.send({ type: 'submit_bet', bet: { type: selectedPool, boats: pickedBoats, pts: betPts, odds: selectedOdds } });
-            myPoints = myPoints - betPts; updatePointsLabelUI(); myPoints = myPoints + betPts; 
+            
+            // 本番モードの時のみ手元ポイントを実際に消費させる
+            if(!isPlayerExampleMode) {
+                myPoints = myPoints - betPts; 
+                updatePointsLabelUI(); 
+                myPoints = myPoints + betPts; 
+            }
+            
             document.getElementById('player-wait-bet-info').style.display = "block";
-            document.getElementById('player-wait-bet-info').innerHTML = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt`;
+            document.getElementById('player-wait-bet-info').innerHTML = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt ${isPlayerExampleMode ? '(例題デモ)':''}`;
             showPage('player-wait');
         }
     </script>
