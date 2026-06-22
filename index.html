@@ -178,7 +178,7 @@
     </div>
 
     <div id="host-p7" class="page">
-        <h1>🏁 レース確定結果 🏁</h1>
+        <h1 id="host-p7-title">🏁 レース確定結果 🏁</h1>
         <div style="display:flex; gap:20px; justify-content:center; align-items:center; margin:15px 0;">
             <div style="font-size:36px; font-weight:bold; color:#ef4444; border:4px double #ef4444; padding:5px 20px;" id="text-final-orders">1-2-3</div>
             <div style="font-size:16px; background:#fff; padding:10px; border-radius:6px; border:1px solid #ccc; flex-grow:1;" id="text-supplementary-info">補足情報が入ります。</div>
@@ -363,7 +363,6 @@
                 isHost = true;
                 if (!appData.questions || appData.questions.length === 0) {
                     appData.questions = [];
-                    // 初期0番枠を自動で例題扱いにする
                     appData.questions.push({ title: '0レース目(例題)', text: '例題デモです。操作やタイム感をテストしましょう！', layout: 'text', choices: Array.from({length:6}, () => ({text:'', img:null})), ans: '1,2,3,4,5,6', supp: '例題のため得点は本番に引き継がれません。', include: true, done: false });
                     for(let i=1; i<=3; i++) appData.questions.push(createEmptyQuestionObject());
                 }
@@ -465,7 +464,6 @@
             updateSelectedListSection3();
         }
         function addQuestionBlock() {
-            // フィールド内の最新一時データをステートに退避してから追加
             captureCurrentFormInputs();
             appData.questions.push(createEmptyQuestionObject());
             renderAdminPage();
@@ -479,24 +477,18 @@
             }
         }
 
-        // 上下スライド移動ボタン用処理
         function moveBlockUpDown(idx, direction) {
             let targetIdx = idx + direction;
-            if (targetIdx < 0 || targetIdx >= appData.questions.length) return; // 境界外ガード
-            
-            // 現在のフォーム入力をデータ配列に完全に吸い上げる
+            if (targetIdx < 0 || targetIdx >= appData.questions.length) return; 
             captureCurrentFormInputs();
             
-            // 要素をスライド置換
             let temp = appData.questions[idx];
             appData.questions[idx] = appData.questions[targetIdx];
             appData.questions[targetIdx] = temp;
             
-            // 再レンダリング
             renderAdminPage();
         }
 
-        // 現在画面上に入力されている文字内容をappData配列に一時同期格納する内部関数
         function captureCurrentFormInputs() {
             for (let idx = 0; idx < appData.questions.length; idx++) {
                 const q = appData.questions[idx];
@@ -549,10 +541,8 @@
 
             captureCurrentFormInputs();
 
-            // 画像のBase64エンコード処理のみ非同期のためここでループ保存
             for (let idx = 0; idx < appData.questions.length; idx++) {
                 const q = appData.questions[idx];
-                // 内部順番(order)はスライドした配列のインデックスそのものを厳密適用
                 q.order = idx;
 
                 for(let n=1; n<=6; n++) {
@@ -582,7 +572,6 @@
                 document.getElementById("qr-container").innerHTML = "";
                 new QRCode(document.getElementById("qr-container"), { text: url, width: 160, height: 160 });
                 
-                // 管理画面でスライド配置された順そのままで出題配列をセット
                 selectedQuestions = appData.questions.filter(q => q.include);
             });
 
@@ -658,7 +647,6 @@
                 document.getElementById('display-rule-content').innerHTML = appData.ruleText;
                 document.getElementById('display-rule-img-container').innerHTML = appData.ruleImg ? `<img src="${appData.ruleImg}">` : "";
                 
-                // スライド順最上部が例題(0R)かどうかでルール説明下部ボタンの誘導先テキストを切り替え
                 let nextBtn = document.getElementById('btn-to-first-race');
                 if(selectedQuestions[0]) {
                     nextBtn.innerText = `0レース目（例題）へ`;
@@ -685,7 +673,7 @@
             
             currentPlayIndex = listIndex;
             const q = selectedQuestions[currentPlayIndex];
-            const isQ0 = (currentPlayIndex === 0); // リストの最上部(0番目)を常に0レース目(例題)とする
+            const isQ0 = (currentPlayIndex === 0); 
 
             for (let id in playersData) {
                 playersData[id].currentBet = null;
@@ -694,7 +682,7 @@
             if(isQ0) {
                 document.getElementById('host-q-title').innerText = `${q.title || '0レース目(例題)'} / 本番直前体験`;
             } else {
-                let pureRaceCount = selectedQuestions.length - 1; // 全本番数
+                let pureRaceCount = selectedQuestions.length - 1; 
                 document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex}レース`} / 全 ${pureRaceCount} レース`;
             }
 
@@ -821,7 +809,7 @@
             boatsState = [];
             
             let rushTargetRank = 0; 
-            if (currentPlayIndex > 0) { // 本番レース(1R以降)限定で逆転劇演出シード値をランダム生成
+            if (currentPlayIndex > 0) { 
                 let randType = Math.random();
                 if (randType < 0.4) rushTargetRank = 2; 
                 else if (randType < 0.8) rushTargetRank = 3; 
@@ -832,7 +820,6 @@
                 let boatNum = i + 1;
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
-                // タイムスケジュールの厳密設定 (1位:15秒, 2位:18秒, 3位:21秒, 4~6位:25秒)
                 let targetGoalTime = 25; 
                 if (finalRank === 1) targetGoalTime = 15;
                 else if (finalRank === 2) targetGoalTime = 18;
@@ -999,7 +986,7 @@
 
 
         /** ========================================================
-         * 投票結果判定＆配当ポイント計算モジュール
+         * 投票結果判定＆配当ポイント計算モジュール (修正版)
          * ======================================================== */
         function checkBetIsHit(bet, winOrders) {
             const bArr = bet.boats; 
@@ -1023,6 +1010,7 @@
             const q = selectedQuestions[currentPlayIndex];
             const isQ0 = (currentPlayIndex === 0);
 
+            // タイトルの設定
             if(isQ0) {
                 document.getElementById('host-p7-title').innerText = `${q.title || '0レース目(例題)'} 確定結果 / デモ終了`;
             } else {
@@ -1032,6 +1020,8 @@
 
             const winOrders = targetOrders;
             document.getElementById('text-final-orders').innerText = winOrders.slice(0,3).join(' - ');
+            
+            // 【修正点】0レース目（例題）でも事前に設定した補足情報(解説テキスト)が正しく反映されるよう修正
             document.getElementById('text-supplementary-info').innerText = q.supp || "特記事項なし";
 
             for(let id in playersData) {
@@ -1042,7 +1032,7 @@
                     let isHit = checkBetIsHit(p.currentBet, winOrders);
                     
                     if(isQ0) {
-                        // 0R(例題)枠の単体精算
+                        // 0R例題枠用の架空単体配当計算
                         if(isHit) {
                             p.lastRoundEarned = p.currentBet.pts * p.currentBet.odds;
                         }
@@ -1063,6 +1053,7 @@
 
             renderRoundRankingUI();
 
+            // 【修正点】0レース目（例題）終了後でも本番第1レースに進むボタンが確実に出るように構造をクリーンアップ
             const actionContainer = document.getElementById('next-action-container');
             actionContainer.innerHTML = "";
             
@@ -1076,7 +1067,7 @@
                 }
                 nextBtn.style.fontSize = "18px";
                 nextBtn.onclick = () => {
-                    // 0R(例題)を終えて本番に進む瞬間に全ユーザーのポイントを100に一斉クリーンリセット
+                    // 0R(例題)から本番へ切り替わる瞬間に全ユーザーのポイントアセットを100ptに強制再同期初期化
                     if(currentPlayIndex === 0) {
                         for(let id in playersData) {
                             playersData[id].points = 100;
@@ -1301,7 +1292,6 @@
 
         function updatePointsLabelUI() {
             if(isPlayerExampleMode) {
-                // 0R(例題)の時は専用表示として10pt架空資金を設定
                 document.getElementById('lbl-player-mode-prefix').innerText = "例題用架空資金:";
                 document.getElementById('lbl-bet-mode-prefix').innerText = "例題用資金:";
                 document.querySelectorAll('.lbl-my-points').forEach(el => el.innerText = "10");
@@ -1322,7 +1312,7 @@
             
             let maxBet = 100;
             if(isPlayerExampleMode) {
-                maxBet = 10; // 0R用の上限値を10に固定
+                maxBet = 10; 
             } else {
                 if(isLastRaceForPlayer) {
                     maxBet = myPoints;
