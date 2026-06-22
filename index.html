@@ -22,11 +22,14 @@
         .wysiwyg-toolbar { display: flex; gap: 5px; margin-bottom: 5px; background: #e2e8f0; padding: 6px; border-radius: 6px; }
         .editor { border: 2px solid #cbd5e1; min-height: 80px; padding: 10px; border-radius: 6px; overflow-y: auto; margin-bottom: 12px; background: #fff;}
         
-        .question-block { border: 2px solid #cbd5e1; margin-bottom: 15px; border-radius: 8px; background: #f8fafc; overflow: hidden; }
+        .question-block { border: 2px solid #cbd5e1; margin-bottom: 15px; border-radius: 8px; background: #f8fafc; overflow: hidden; transition: transform 0.2s ease; }
         .q-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #e2e8f0; font-weight: bold; gap: 10px; }
         .q-header-title { flex-grow: 1; cursor: pointer; }
         .q-header-ctrls { display: flex; align-items: center; gap: 15px; background: rgba(255,255,255,0.6); padding: 5px 10px; border-radius: 4px; border: 1px solid #cbd5e1; font-size: 14px; }
         .q-header-ctrls label { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .q-order-btns { display: flex; gap: 2px; margin-right: 5px; }
+        .q-order-btns button { padding: 4px 8px; font-size: 12px; margin: 0; background: #475569; }
+        .q-order-btns button:hover { background: #1e293b; }
         .q-details { display: none; padding: 15px; border-top: 2px solid #cbd5e1; }
         .q-details.open { display: block; }
         
@@ -79,9 +82,6 @@
         /* 点滅アニメーション */
         .flash-winner { animation: flash-anime 0.5s infinite alternate; }
         @keyframes flash-anime { 0% { background-color: rgba(234, 179, 8, 0.2); border-color: #eab308; } 100% { background-color: rgba(234, 179, 8, 0.9); border-color: #ff0000; color:#000; } }
-
-        /* 出題管理テーブル用スタイル */
-        .order-setting-table input[type="number"] { width: 60px; text-align: center; margin: 0; padding: 4px; }
     </style>
 </head>
 <body>
@@ -100,12 +100,12 @@
         <div id="rule-editor" class="editor" contenteditable="true">ここにルールを入力...</div>
         <label>ルール説明用画像: <input type="file" id="rule-image-upload" accept="image/*"></label>
         
-        <h3>2. 問題の登録 (0問目は例題枠となります)</h3>
+        <h3>2. 問題の登録と順番のスライド変更 (最上部が0レース目の例題枠になります)</h3>
+        <p style="font-size:13px; color:#64748b; margin:0 0 10px 0;">※【🔼 上へ】や【🔽 下へ】ボタンを押すと、枠の順番を上下に簡単に入れ替えることができます。</p>
         <button onclick="addQuestionBlock()">＋ 新しい問題を追加する</button>
-        <div id="questions-container"></div>
+        <div id="questions-container" style="margin-top:15px;"></div>
         
-        <h3>3. 出題設定と順番の指定</h3>
-        <p style="font-size:14px; color:#64748b; margin:0 0 10px 0;">※上のリストで「出題する」にチェックが入っている問題がここに並びます。出題順番を自由に設定してください（順番を「0」にすると例題扱いになります）。</p>
+        <h3>3. 出題設定の最終確認</h3>
         <div id="selected-questions-list"></div>
         
         <br><hr><br>
@@ -178,7 +178,7 @@
     </div>
 
     <div id="host-p7" class="page">
-        <h1 id="host-p7-title">🏁 レース確定結果 🏁</h1>
+        <h1>🏁 レース確定結果 🏁</h1>
         <div style="display:flex; gap:20px; justify-content:center; align-items:center; margin:15px 0;">
             <div style="font-size:36px; font-weight:bold; color:#ef4444; border:4px double #ef4444; padding:5px 20px;" id="text-final-orders">1-2-3</div>
             <div style="font-size:16px; background:#fff; padding:10px; border-radius:6px; border:1px solid #ccc; flex-grow:1;" id="text-supplementary-info">補足情報が入ります。</div>
@@ -320,7 +320,7 @@
         }
 
         /** ========================================================
-         * システム管理用ステート
+         * アプリケーション内部状態
          * ======================================================== */
         let appData = {
             ruleText: "ここにルールを入力してください。", ruleImg: null,
@@ -363,9 +363,9 @@
                 isHost = true;
                 if (!appData.questions || appData.questions.length === 0) {
                     appData.questions = [];
-                    // 初期ダミー（0番を最初から例題にする）
-                    appData.questions.push({ title: '0レース目(例題)', text: '例題です。自由に賭けてみましょう！', layout: 'text', choices: Array.from({length:6}, () => ({text:'', img:null})), ans: '1,2,3,4,5,6', supp: '例題のため得点は本番に引き継がれません。', include: true, order: 0, done: false });
-                    for(let i=1; i<=3; i++) appData.questions.push(createEmptyQuestionObject(i));
+                    // 初期0番枠を自動で例題扱いにする
+                    appData.questions.push({ title: '0レース目(例題)', text: '例題デモです。操作やタイム感をテストしましょう！', layout: 'text', choices: Array.from({length:6}, () => ({text:'', img:null})), ans: '1,2,3,4,5,6', supp: '例題のため得点は本番に引き継がれません。', include: true, done: false });
+                    for(let i=1; i<=3; i++) appData.questions.push(createEmptyQuestionObject());
                 }
                 renderAdminPage();
                 if (mode === 'admin') {
@@ -384,7 +384,7 @@
         }
 
         /** ========================================================
-         * 管理画面（事前問題・ルール設定）処理群
+         * 管理画面（事前問題・スライド順序変更・ルール設定）処理群
          * ======================================================== */
         function renderAdminPage() {
             document.getElementById('rule-editor').innerHTML = appData.ruleText || "";
@@ -392,14 +392,17 @@
             container.innerHTML = "";
 
             appData.questions.forEach((q, idx) => {
-                if(q.order === undefined) q.order = idx; 
-
                 const div = document.createElement('div');
                 div.className = 'question-block';
+                div.id = `q-block-element-${idx}`;
                 div.innerHTML = `
                     <div class="q-header">
+                        <div class="q-order-btns">
+                            <button type="button" onclick="moveBlockUpDown(${idx}, -1)">🔼 上へ</button>
+                            <button type="button" onclick="moveBlockUpDown(${idx}, 1)">🔽 下へ</button>
+                        </div>
                         <div class="q-header-title" onclick="toggleQDetails(${idx})">
-                            枠 ${idx + 1} ${q.order===0 ? '<span style="color:#ef4444;">(例題枠)</span>':''} - 題名: <span id="q-head-title-${idx}">${q.title || '未設定'}</span> <span style="font-size:12px; color:#64748b;">▼ クリックで詳細編集</span>
+                            並び番 ${idx + 1} ${idx===0 ? '<span style="color:#ef4444;">(★0R例題枠)</span>':''} - 題名: <span id="q-head-title-${idx}">${q.title || '未設定'}</span>
                         </div>
                         <div class="q-header-ctrls">
                             <label><input type="checkbox" id="q-include-${idx}" ${q.include ? 'checked' : ''} onchange="syncHeaderCheckbox(${idx}, 'include')"> 出題する</label>
@@ -439,7 +442,7 @@
                         <textarea id="q-supp-${idx}" style="width:100%; height:40px;">${q.supp || ''}</textarea>
 
                         <hr style="border-style:dashed;">
-                        <button onclick="removeQuestion(${idx})" style="background:#ef4444; padding:4px 10px; font-size:12px;">この枠を削除</button>
+                        <button type="button" onclick="removeQuestion(${idx})" style="background:#ef4444; padding:4px 10px; font-size:12px;">この枠を削除</button>
                     </div>
                 `;
                 container.appendChild(div);
@@ -447,11 +450,11 @@
             updateSelectedListSection3();
         }
 
-        function createEmptyQuestionObject(orderNum) {
+        function createEmptyQuestionObject() {
             return {
-                title: `第${orderNum}レース`, text: '予想してください。', layout: 'text',
+                title: '新しいレース', text: '予想してください。', layout: 'text',
                 choices: Array.from({length:6}, () => ({text:'', img:null})),
-                ans: '1,2,3,4,5,6', supp: '', include: true, order: orderNum, done: false
+                ans: '1,2,3,4,5,6', supp: '', include: true, done: false
             };
         }
         function toggleQDetails(idx) {
@@ -462,14 +465,53 @@
             updateSelectedListSection3();
         }
         function addQuestionBlock() {
-            appData.questions.push(createEmptyQuestionObject(appData.questions.length));
+            // フィールド内の最新一時データをステートに退避してから追加
+            captureCurrentFormInputs();
+            appData.questions.push(createEmptyQuestionObject());
             renderAdminPage();
             toggleQDetails(appData.questions.length - 1);
         }
         function removeQuestion(idx) {
             if(confirm("本当にこの問題を削除しますか？")) {
+                captureCurrentFormInputs();
                 appData.questions.splice(idx, 1);
                 renderAdminPage();
+            }
+        }
+
+        // 上下スライド移動ボタン用処理
+        function moveBlockUpDown(idx, direction) {
+            let targetIdx = idx + direction;
+            if (targetIdx < 0 || targetIdx >= appData.questions.length) return; // 境界外ガード
+            
+            // 現在のフォーム入力をデータ配列に完全に吸い上げる
+            captureCurrentFormInputs();
+            
+            // 要素をスライド置換
+            let temp = appData.questions[idx];
+            appData.questions[idx] = appData.questions[targetIdx];
+            appData.questions[targetIdx] = temp;
+            
+            // 再レンダリング
+            renderAdminPage();
+        }
+
+        // 現在画面上に入力されている文字内容をappData配列に一時同期格納する内部関数
+        function captureCurrentFormInputs() {
+            for (let idx = 0; idx < appData.questions.length; idx++) {
+                const q = appData.questions[idx];
+                let titleEl = document.getElementById(`q-title-${idx}`); if(titleEl) q.title = titleEl.value;
+                let textEl = document.getElementById(`q-text-${idx}`); if(textEl) q.text = textEl.value;
+                let layoutEl = document.getElementById(`q-layout-${idx}`); if(layoutEl) q.layout = layoutEl.value;
+                let ansEl = document.getElementById(`q-ans-${idx}`); if(ansEl) q.ans = ansEl.value;
+                let suppEl = document.getElementById(`q-supp-${idx}`); if(suppEl) q.supp = suppEl.value;
+                let incEl = document.getElementById(`q-include-${idx}`); if(incEl) q.include = incEl.checked;
+                let doneEl = document.getElementById(`q-done-${idx}`); if(doneEl) q.done = doneEl.checked;
+
+                for(let n=1; n<=6; n++) {
+                    let txtEl = document.getElementById(`q-c-txt-${idx}-${n}`);
+                    if(txtEl) q.choices[n-1].text = txtEl.value;
+                }
             }
         }
 
@@ -478,34 +520,26 @@
             let targetQuestions = [];
 
             appData.questions.forEach((q, idx) => {
-                const cb = document.getElementById(`q-include-${idx}`);
-                if (cb && cb.checked) {
-                    targetQuestions.push({ qRef: q, origIdx: idx, title: q.title || `枠${idx+1}` });
+                if (q.include) {
+                    targetQuestions.push({ qRef: q, idx: idx });
                 }
             });
-
-            targetQuestions.sort((a, b) => (a.qRef.order || 0) - (b.qRef.order || 0));
 
             if(targetQuestions.length === 0) {
                 listDiv.innerHTML = "<p style='color:red; font-weight:bold;'>※現在「出題する」にチェックが入っているレースはありません。</p>";
                 return;
             }
 
-            let html = `<table class="order-setting-table" style="max-width:500px; margin: 10px 0;">
-                            <tr><th>元の枠番</th><th>レース名</th><th>出題順（0で例題指定）</th></tr>`;
-            targetQuestions.forEach((item) => {
-                html += `<tr>
-                            <td>枠 ${item.origIdx + 1}</td>
-                            <td><strong>${item.title}</strong></td>
-                            <td><input type="number" id="q-sort-order-${item.origIdx}" value="${item.qRef.order ?? (item.origIdx)}" onchange="updateLiveOrderNum(${item.origIdx}, this.value)"></td>
-                         </tr>`;
+            let html = `<ol style="font-weight:bold; font-size:15px; background:#f8fafc; padding:15px 30px; border-radius:6px; border:1px solid #cbd5e1; max-width:450px;">`;
+            targetQuestions.forEach((item, i) => {
+                if (i === 0) {
+                    html += `<li style="color:#ef4444; margin-bottom:4px;">${item.qRef.title || '未設定'} (練習用・0レース目扱い)</li>`;
+                } else {
+                    html += `<li style="margin-bottom:4px;">${item.qRef.title || '未設定'} (本番第 ${i} 戦)</li>`;
+                }
             });
-            html += `</table>`;
+            html += `</ol>`;
             listDiv.innerHTML = html;
-        }
-
-        function updateLiveOrderNum(origIdx, value) {
-            appData.questions[origIdx].order = parseInt(value) || 0;
         }
 
         async function saveAllData() {
@@ -513,19 +547,15 @@
             const ruleImgFile = document.getElementById('rule-image-upload').files[0];
             if (ruleImgFile) appData.ruleImg = await fileToBase64(ruleImgFile);
 
+            captureCurrentFormInputs();
+
+            // 画像のBase64エンコード処理のみ非同期のためここでループ保存
             for (let idx = 0; idx < appData.questions.length; idx++) {
                 const q = appData.questions[idx];
-                q.title = document.getElementById(`q-title-${idx}`).value;
-                q.text = document.getElementById(`q-text-${idx}`).value;
-                q.layout = document.getElementById(`q-layout-${idx}`).value;
-                q.ans = document.getElementById(`q-ans-${idx}`).value;
-                q.supp = document.getElementById(`q-supp-${idx}`).value;
-                
-                q.include = document.getElementById(`q-include-${idx}`).checked;
-                q.done = document.getElementById(`q-done-${idx}`).checked;
+                // 内部順番(order)はスライドした配列のインデックスそのものを厳密適用
+                q.order = idx;
 
                 for(let n=1; n<=6; n++) {
-                    q.choices[n-1].text = document.getElementById(`q-c-txt-${idx}-${n}`).value;
                     const f = document.getElementById(`q-c-img-${idx}-${n}`).files[0];
                     if(f) q.choices[n-1].img = await fileToBase64(f);
                 }
@@ -552,7 +582,8 @@
                 document.getElementById("qr-container").innerHTML = "";
                 new QRCode(document.getElementById("qr-container"), { text: url, width: 160, height: 160 });
                 
-                selectedQuestions = appData.questions.filter(q => q.include).sort((a,b) => (a.order || 0) - (b.order || 0));
+                // 管理画面でスライド配置された順そのままで出題配列をセット
+                selectedQuestions = appData.questions.filter(q => q.include);
             });
 
             peer.on('connection', (conn) => {
@@ -575,8 +606,7 @@
                         updatePlayerListUI();
                         updateHostBetStatusUI();
                         
-                        // 現在ホストが0レース目(例題)にいるかどうかで参加者の初期画面モードを分岐案内
-                        let isCurrentQ0 = (selectedQuestions[currentPlayIndex] && selectedQuestions[currentPlayIndex].order === 0);
+                        let isCurrentQ0 = (currentPlayIndex === 0);
                         conn.send({ type: 'welcome', points: playersData[conn.peer].points, isExampleMode: isCurrentQ0 });
                     } else if (data.type === 'submit_bet') {
                         if (playersData[conn.peer]) {
@@ -627,6 +657,14 @@
             if (hostPage === 'host-p3') {
                 document.getElementById('display-rule-content').innerHTML = appData.ruleText;
                 document.getElementById('display-rule-img-container').innerHTML = appData.ruleImg ? `<img src="${appData.ruleImg}">` : "";
+                
+                // スライド順最上部が例題(0R)かどうかでルール説明下部ボタンの誘導先テキストを切り替え
+                let nextBtn = document.getElementById('btn-to-first-race');
+                if(selectedQuestions[0]) {
+                    nextBtn.innerText = `0レース目（例題）へ`;
+                } else {
+                    nextBtn.innerText = `第1レースへ`;
+                }
             }
             if (playerPage) broadcast('page', { page: playerPage });
         }
@@ -647,21 +685,17 @@
             
             currentPlayIndex = listIndex;
             const q = selectedQuestions[currentPlayIndex];
-            const isQ0 = (q.order === 0); // 0レース目(例題)フラグ
+            const isQ0 = (currentPlayIndex === 0); // リストの最上部(0番目)を常に0レース目(例題)とする
 
             for (let id in playersData) {
                 playersData[id].currentBet = null;
             }
 
-            // タイトルの出し分け
             if(isQ0) {
                 document.getElementById('host-q-title').innerText = `${q.title || '0レース目(例題)'} / 本番直前体験`;
             } else {
-                // 本番レース数が正しく計算できるように調整 (例題を除く純粋な本番問題の総数)
-                let pureRaceCount = selectedQuestions.filter(item => item.order !== 0).length;
-                // 現在の本番が何戦目かカウント
-                let currentPureIndex = selectedQuestions.slice(0, currentPlayIndex+1).filter(item => item.order !== 0).length;
-                document.getElementById('host-q-title').innerText = `${q.title || `第${currentPureIndex}レース`} / 全 ${pureRaceCount} レース`;
+                let pureRaceCount = selectedQuestions.length - 1; // 全本番数
+                document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex}レース`} / 全 ${pureRaceCount} レース`;
             }
 
             document.getElementById('host-q-text-view').innerText = q.text;
@@ -688,11 +722,9 @@
         }
 
         function sendBetPrompt() {
-            const q = selectedQuestions[currentPlayIndex];
-            const isQ0 = (q.order === 0);
-
-            // 残りレース数のカウント（本番レースのみを対象とする）
-            let remainRaces = selectedQuestions.filter(item => item.order !== 0).length - selectedQuestions.slice(0, currentPlayIndex).filter(item => item.order !== 0).length;
+            const isQ0 = (currentPlayIndex === 0);
+            let remainRaces = selectedQuestions.length - 1 - (currentPlayIndex - 1);
+            if(isQ0) remainRaces = selectedQuestions.length - 1;
             const isLast = (remainRaces === 1 && !isQ0);
             
             broadcast('request_bet', {
@@ -749,15 +781,13 @@
 
         function goToRaceScreen() {
             changeHostScreen('host-p6');
-            const q = selectedQuestions[currentPlayIndex];
-            const isQ0 = (q.order === 0);
+            const isQ0 = (currentPlayIndex === 0);
 
             if(isQ0) {
-                document.getElementById('host-p6-title').innerText = `${q.title || '0レース目(例題)'} / 体験デモ走行`;
+                document.getElementById('host-p6-title').innerText = `${selectedQuestions[currentPlayIndex].title || '0レース目(例題)'} / 体験デモ走行`;
             } else {
-                let pureRaceCount = selectedQuestions.filter(item => item.order !== 0).length;
-                let currentPureIndex = selectedQuestions.slice(0, currentPlayIndex+1).filter(item => item.order !== 0).length;
-                document.getElementById('host-p6-title').innerText = `${q.title || `第${currentPureIndex}レース`} / 全 ${pureRaceCount} レース`;
+                let pureRaceCount = selectedQuestions.length - 1;
+                document.getElementById('host-p6-title').innerText = `${selectedQuestions[currentPlayIndex].title || `第${currentPlayIndex}レース`} / 全 ${pureRaceCount} レース`;
             }
 
             const bCont = document.getElementById('race-bottom-bets-container');
@@ -781,7 +811,7 @@
             
             racePhase = 'ready';
             finishedCount = 0;
-            
+            const q = selectedQuestions[currentPlayIndex];
             targetOrders = q.ans.split(',').map(v => parseInt(v.trim())); 
 
             initBoatsGraphics();
@@ -790,9 +820,8 @@
         function initBoatsGraphics() {
             boatsState = [];
             
-            // 例題レース(currentPlayIndexが0、またはorderが0)は通常軌道、本番の2レース目以降に大逆転劇を割り振る
             let rushTargetRank = 0; 
-            if (currentPlayIndex > 0 && selectedQuestions[currentPlayIndex].order !== 0) {
+            if (currentPlayIndex > 0) { // 本番レース(1R以降)限定で逆転劇演出シード値をランダム生成
                 let randType = Math.random();
                 if (randType < 0.4) rushTargetRank = 2; 
                 else if (randType < 0.8) rushTargetRank = 3; 
@@ -803,6 +832,7 @@
                 let boatNum = i + 1;
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
+                // タイムスケジュールの厳密設定 (1位:15秒, 2位:18秒, 3位:21秒, 4~6位:25秒)
                 let targetGoalTime = 25; 
                 if (finalRank === 1) targetGoalTime = 15;
                 else if (finalRank === 2) targetGoalTime = 18;
@@ -991,14 +1021,13 @@
         function goToResultPresentation() {
             changeHostScreen('host-p7');
             const q = selectedQuestions[currentPlayIndex];
-            const isQ0 = (q.order === 0);
+            const isQ0 = (currentPlayIndex === 0);
 
             if(isQ0) {
                 document.getElementById('host-p7-title').innerText = `${q.title || '0レース目(例題)'} 確定結果 / デモ終了`;
             } else {
-                let pureRaceCount = selectedQuestions.filter(item => item.order !== 0).length;
-                let currentPureIndex = selectedQuestions.slice(0, currentPlayIndex+1).filter(item => item.order !== 0).length;
-                document.getElementById('host-p7-title').innerText = `${q.title || `第${currentPureIndex}レース`} 確定結果 / 全 ${pureRaceCount} レース`;
+                let pureRaceCount = selectedQuestions.length - 1;
+                document.getElementById('host-p7-title').innerText = `${q.title || `第${currentPlayIndex}レース`} 確定結果 / 全 ${pureRaceCount} レース`;
             }
 
             const winOrders = targetOrders;
@@ -1013,14 +1042,12 @@
                     let isHit = checkBetIsHit(p.currentBet, winOrders);
                     
                     if(isQ0) {
-                        // 【0レース目(例題)限定ロジック】
-                        // 本番用総資産ポイント(points)の減算やhistoryへのプッシュは完全無視し、
-                        // 単体獲得ポイントのUI表示用(lastRoundEarned)だけ計算する
+                        // 0R(例題)枠の単体精算
                         if(isHit) {
                             p.lastRoundEarned = p.currentBet.pts * p.currentBet.odds;
                         }
                     } else {
-                        // 【本番レース用の通常精算処理】
+                        // 本番用精算
                         p.points -= p.currentBet.pts;
                         if(isHit) {
                             let gain = p.currentBet.pts * p.currentBet.odds;
@@ -1041,9 +1068,7 @@
             
             if (currentPlayIndex + 1 < selectedQuestions.length) {
                 const nextBtn = document.createElement('button');
-                // 次のレースが本番第1戦かどうかで文言を調整
-                let nextQ = selectedQuestions[currentPlayIndex + 1];
-                if(nextQ.order === 1 || (isQ0 && nextQ.order !== 0)) {
+                if(currentPlayIndex === 0) {
                     nextBtn.innerText = `🏁 いよいよ本番！第1レースの準備へ`;
                     nextBtn.style.background = "#22c55e";
                 } else {
@@ -1051,8 +1076,8 @@
                 }
                 nextBtn.style.fontSize = "18px";
                 nextBtn.onclick = () => {
-                    // もし今終えたのが0レース目(例題)なら、本番開始直前に全ユーザーのポイント状態を100に強制クリーンリセット
-                    if(isQ0) {
+                    // 0R(例題)を終えて本番に進む瞬間に全ユーザーのポイントを100に一斉クリーンリセット
+                    if(currentPlayIndex === 0) {
                         for(let id in playersData) {
                             playersData[id].points = 100;
                             playersData[id].history = [100];
@@ -1177,8 +1202,7 @@
             if(chartInstance) chartInstance.destroy();
 
             let labels = ['初期ポイント'];
-            // グラフの軸から0R(例題)を排除して美しく集計
-            let pureRaceCount = selectedQuestions.filter(item => item.order !== 0).length;
+            let pureRaceCount = selectedQuestions.length - 1;
             for(let i=1; i<=pureRaceCount; i++) labels.push(`第${i}R終了`);
 
             let datasets = [];
@@ -1223,7 +1247,7 @@
         let requiredBoatCount = 0;
         let remainRacesForPlayer = 0;
         let isLastRaceForPlayer = false;
-        let isPlayerExampleMode = false; // クライアント側の例題デモフラグ
+        let isPlayerExampleMode = false; 
 
         function initPlayerPeer() {
             myConnection = new Peer();
@@ -1277,9 +1301,10 @@
 
         function updatePointsLabelUI() {
             if(isPlayerExampleMode) {
+                // 0R(例題)の時は専用表示として10pt架空資金を設定
                 document.getElementById('lbl-player-mode-prefix').innerText = "例題用架空資金:";
                 document.getElementById('lbl-bet-mode-prefix').innerText = "例題用資金:";
-                document.querySelectorAll('.lbl-my-points').forEach(el => el.innerText = "100");
+                document.querySelectorAll('.lbl-my-points').forEach(el => el.innerText = "10");
             } else {
                 document.getElementById('lbl-player-mode-prefix').innerText = "あなたの所持ポイント:";
                 document.getElementById('lbl-bet-mode-prefix').innerText = "所持:";
@@ -1296,7 +1321,9 @@
             document.getElementById('player-target-instruction').innerText = "上から賭け方の種類を選択してください。";
             
             let maxBet = 100;
-            if(!isPlayerExampleMode) {
+            if(isPlayerExampleMode) {
+                maxBet = 10; // 0R用の上限値を10に固定
+            } else {
                 if(isLastRaceForPlayer) {
                     maxBet = myPoints;
                 } else {
@@ -1322,7 +1349,7 @@
             document.getElementById(`btn-pool-${type}`).classList.add('selected');
 
             if(type === 'tan') { requiredBoatCount = 1; document.getElementById('player-target-instruction').innerText = "1着になる艇を1つ選んでください。"; }
-            else if(type === 'fuk2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "順共同で2位以内に入る艇を2つ選んでください。"; }
+            else if(type === 'fuk2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "順不同で2位以内に入る艇を2つ選んでください。"; }
             else if(type === 'fuk3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "順不同で3位以内に入る艇を3つ選んでください。"; }
             else if(type === 'tan2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "1着→2着の順に2つ選んでください。"; }
             else if(type === 'tan3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "1着→2着→3着の順に3つ選んでください。"; }
@@ -1392,20 +1419,17 @@
                 alert(`ポイントの設定ルール違反です！\n今回の賭け金の上限は ${maxLimit} pt です。`); return;
             }
             
-            let prefixConfirm = isPlayerExampleMode ? "【練習・例題デモ投票】\n※得点は本番に引き継がれません。\n\n" : "【最終確認】\n";
+            let prefixConfirm = isPlayerExampleMode ? "【練習・例題デモ投票】\n※例題用資金10pt内でのベットです。得点は本番に引き継がれません。\n\n" : "【最終確認】\n";
             if(!confirm(`${prefixConfirm}賭け方: ${POOL_NAMES[selectedPool]}\n選択艇: ${pickedBoats.join(', ')}\n賭けポイント: ${betPts} pt\n\nこのオッズで確定してホストへ送信しますか？`)) return;
 
             peer.send({ type: 'submit_bet', bet: { type: selectedPool, boats: pickedBoats, pts: betPts, odds: selectedOdds } });
             
-            // 本番モードの時のみ手元ポイントを実際に消費させる
             if(!isPlayerExampleMode) {
-                myPoints = myPoints - betPts; 
-                updatePointsLabelUI(); 
-                myPoints = myPoints + betPts; 
+                myPoints = myPoints - betPts; updatePointsLabelUI(); myPoints = myPoints + betPts; 
             }
             
             document.getElementById('player-wait-bet-info').style.display = "block";
-            document.getElementById('player-wait-bet-info').innerHTML = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt ${isPlayerExampleMode ? '(例題デモ)':''}`;
+            document.getElementById('player-wait-bet-info').innerHTML = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt ${isPlayerExampleMode ? '(例題用10pt資金より)':''}`;
             showPage('player-wait');
         }
     </script>
