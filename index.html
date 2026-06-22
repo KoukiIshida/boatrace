@@ -732,6 +732,15 @@
             });
         }
 
+        // レース結果後、各参加者へ最新の所持ポイントを送信（①②の同期）
+        function sendPointsUpdate() {
+            for (let id in playersData) {
+                if (connections[id]) {
+                    try { connections[id].send({ type: 'points_update', points: playersData[id].points }); } catch(e){}
+                }
+            }
+        }
+
         function updatePlayerListUI() {
             const container = document.getElementById('player-list-box');
             container.innerHTML = "";
@@ -1042,80 +1051,68 @@
         function raceAnimationLoop(now) {
             // ① 何らかのエラーが起きても画面が固まらないよう全体を try/catch で保護
             try {
-                const elapsed = (now - raceStartTimestamp) / 1000; 
+                const elapsed = (now - raceStartTimestamp) / 1000;
                 const goalX = 740;
                 const startX = 60;
-                const totalDistance = goalX - startX; 
+                const totalDistance = goalX - startX;
+                const waitLineX = goalX - 6; // ゴール直前で団子になる待機ライン
 
-                // ① 安全装置：30秒経っても終わらない場合は未ゴール艇を強制的にゴールさせる
-                if (elapsed > 30) {
-                    boatsState.forEach(b => {
-                        if (b.goalTime === null) { b.x = goalX; b.goalTime = elapsed; finishedCount++; }
-                    });
+                // ① 安全装置：35秒で強制終了（着順どおりに残り艇を確定）
+                if (elapsed > 35) {
+                    boatsState.filter(b => b.goalTime === null)
+                        .sort((a, b) => a.finalRank - b.finalRank)
+                        .forEach(b => { b.x = goalX; b.goalTime = elapsed; finishedCount++; });
                 }
 
                 boatsState.forEach(b => {
                     if (b.goalTime !== null) return;
 
-                    // 時間軸に対する基本進捗率 (0.0 〜 1.0)
                     let progressRatio = elapsed / b.targetGoalTime;
                     if (progressRatio > 1.0) progressRatio = 1.0;
 
                     let basePos = 0;
-
                     if (b.isCloser) {
-                        // 2R以降の追い込み艇演出：
-                        // 進捗75%（後半の直線前）まではかなり後方に意図的に待機させておく
+                        // 追い込み艇演出：75%まで後方待機→残り25%でごぼう抜き
                         if (progressRatio < 0.75) {
                             basePos = totalDistance * Math.pow(progressRatio, 1.6) * 0.70;
                         } else {
-                            // 残り25%から驚異的な加速で一気にごぼう抜きを行う
-                            let t = (progressRatio - 0.75) / 0.25; 
+                            let t = (progressRatio - 0.75) / 0.25;
                             let startAt75 = totalDistance * Math.pow(0.75, 1.6) * 0.70;
                             basePos = startAt75 + (totalDistance - startAt75) * Math.pow(t, 2.2);
                         }
                     } else {
-                        // 通常ボートの滑らかな進行曲線
-                        basePos = totalDistance * Math.pow(progressRatio, 1.1); 
+                        basePos = totalDistance * Math.pow(progressRatio, 1.1);
                     }
 
-                    // 【デッドヒート感の大幅強化ロジック】
-                    // 進捗95%（ゴール直前）までの長い間、激しいサイン波のゆらぎを与えて、常に順位が激しく入れ替わる団子状態を維持
-                    let wobble = 0;
-                    if (progressRatio > 0.02 && progressRatio < 0.95) {
-                        wobble = Math.sin(elapsed * 4.0 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.3);
+                    // デッドヒート用の揺らぎ（終盤に向けて滑らかに減衰）
+                    let wobble = Math.sin(elapsed * 4.0 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.3);
+                    if (progressRatio >= 0.95) {
+                        wobble *= Math.max(0, (1.0 - progressRatio) / 0.05);
+                    } else if (progressRatio <= 0.02) {
+                        wobble = 0;
                     }
 
                     b.x = startX + basePos + wobble;
 
-                    // 【バグ解消：順位の嘘を100%防ぐ収束制御】
-                    // 残り5%（進捗95%以降）に突入した瞬間、すべてのボートの「ランダムな揺らぎ」を完全にゼロへと強制減衰させます。
-                    if (progressRatio >= 0.95) {
-                        let easeFactor = (1.0 - progressRatio) / 0.05; // 1.0 → 0.0に綺麗に減少
-                        b.x = startX + basePos + (wobble * easeFactor);
+                    // 後退禁止ガード
+                    if (b.lastX && b.x < b.lastX) b.x = b.lastX + 0.2;
 
-                        // 先にゴールすべきボート（自分よりfinalRankの数字が小さいボート）の座標を取得
-                        let advancedBoats = boatsState.filter(item => item.finalRank < b.finalRank);
-                        if (advancedBoats.length > 0) {
-                            let minAdvancedX = Math.min(...advancedBoats.map(item => item.x));
-                            if (b.x >= minAdvancedX) {
-                                b.x = minAdvancedX - 15; // 鼻差で絶対に抜かせないようロック
-                            }
+                    // 【③ 着順保証】自分より上位（finalRankが小さい）の艇が
+                    // 全部ゴールするまでは、ゴール手前で待機させて先ゴールを禁止
+                    let predecessorsPending = boatsState.some(o => o.finalRank < b.finalRank && o.goalTime === null);
+
+                    if (predecessorsPending) {
+                        if (b.x > waitLineX) b.x = waitLineX; // 追い越し・先ゴール禁止（団子状態を維持）
+                    } else {
+                        // 自分の番：ゴール可能
+                        if (elapsed >= b.targetGoalTime || b.x >= goalX) {
+                            b.x = goalX;
+                            b.goalTime = elapsed;
+                            finishedCount++;
                         }
                     }
 
-                    // 絶対後退禁止ガード
-                    if (b.lastX && b.x < b.lastX) {
-                        b.x = b.lastX + 0.2; 
-                    }
                     b.lastX = b.x;
-
-                    // ゴール判定
-                    if (elapsed >= b.targetGoalTime || b.x >= goalX) {
-                        b.x = goalX;
-                        b.goalTime = elapsed;
-                        finishedCount++;
-                    }
                 });
 
                 drawRaceCanvas();
@@ -1127,9 +1124,11 @@
                     handleRaceFinishedUI();
                 }
             } catch (e) {
-                // ① エラーが出ても固まらせず、全艇をゴール扱いにして結果画面へ進めるようにする
-                console.error("レース処理中にエラーが発生しました:", e);
-                boatsState.forEach(b => { if (b.goalTime === null) { b.x = 740; b.goalTime = 99; } });
+                // ① エラーでも固まらせず、着順どおりに全艇ゴール扱いにして結果へ進める
+                console.error("レース処理中にエラー:", e);
+                boatsState.filter(b => b.goalTime === null)
+                    .sort((a, b) => a.finalRank - b.finalRank)
+                    .forEach(b => { b.x = 740; b.goalTime = 99; });
                 racePhase = 'finished';
                 drawRaceCanvas();
                 handleRaceFinishedUI();
@@ -1214,7 +1213,8 @@
                 }
             }
 
-            saveGameState(); // ② 得点確定後に保存（ここが一番重要）
+            saveGameState();    // ② 得点確定後に保存（ここが一番重要）
+            sendPointsUpdate(); // ①② 参加者へ最新残高を配信
 
             renderRoundRankingUI();
 
@@ -1237,7 +1237,8 @@
                             playersData[id].history = [100];
                             playersData[id].lastRoundEarned = 0;
                         }
-                        saveGameState(); // ② 例題後リセットも保存
+                        saveGameState();
+                        sendPointsUpdate(); // リセット後の100ptを配信
                     }
                     setupQuestion(currentPlayIndex + 1);
                 };
@@ -1437,6 +1438,9 @@
                         myPoints = data.points;
                         isPlayerExampleMode = data.isExampleMode || false;
                         updatePointsLabelUI();
+                    } else if (data.type === 'points_update') {   // ①② 最新残高の受信
+                        myPoints = data.points;
+                        if (!isPlayerExampleMode) updatePointsLabelUI();
                     } else if (data.type === 'request_bet') {
                         remainRacesForPlayer = data.remainRaces;
                         isLastRaceForPlayer = data.isLast;
@@ -1482,6 +1486,7 @@
                 if(isLastRaceForPlayer) {
                     maxBet = myPoints;
                 } else {
+                    // 1pt温存仕様：将来のレース用に最低1ptずつ残す
                     maxBet = myPoints - (remainRacesForPlayer - 1);
                 }
             }
@@ -1579,9 +1584,7 @@
 
             peer.send({ type: 'submit_bet', bet: { type: selectedPool, boats: pickedBoats, pts: betPts, odds: selectedOdds } });
             
-            if(!isPlayerExampleMode) {
-                myPoints = myPoints - betPts; updatePointsLabelUI(); myPoints = myPoints + betPts; 
-            }
+            // ※残高はホストが管理し、レース後の points_update で正しく更新されます（ローカルでの仮増減は廃止）
             
             document.getElementById('player-wait-bet-info').style.display = "block";
             document.getElementById('player-wait-bet-info').innerHTML = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt ${isPlayerExampleMode ? '(例題用10pt資金より)':''}`;
