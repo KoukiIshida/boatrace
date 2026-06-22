@@ -116,6 +116,10 @@
         <h1>ボートレース風クイズ 参加者待機室</h1>
         <div id="qr-container"></div>
         <p style="text-align:center; font-weight:bold;"><a id="join-url" href="#" target="_blank"></a></p>
+
+        <!-- ② 再開モード用アクション枠 -->
+        <div id="resume-action-box" style="text-align:center; margin:10px 0; display:none;"></div>
+
         <div style="text-align:center;">
             <h3>現在の参加者 (<span id="player-count">0</span> 人)</h3>
             <div id="player-list-box" style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center; font-size:16px;"></div>
@@ -124,6 +128,7 @@
         <div style="text-align:center;">
             <button onclick="changeHostScreen('host-p3', 'player-wait')" style="font-size:20px; padding:12px 30px;">ルール説明へ進む</button>
             <button onclick="changeHostScreen('host-p1')" style="background:#64748b;">管理画面に戻る</button>
+            <button onclick="forceNewRoom()" style="background:#ef4444;">🆕 新しい部屋を作り直す</button>
         </div>
     </div>
 
@@ -336,12 +341,57 @@
         let playersData = {}; 
         let isHost = false;
         let wakeLock = null; 
+        let hostPeerRetry = 0;          // ② 部屋番号再取得のリトライ回数
+        let isResumeMode = false;       // ② 再開モードフラグ
 
         const POOL_NAMES = { tan: '単勝', fuk2: '２連複', fuk3: '３連複', tan2: '２連単', tan3: '３連単' };
+        const LIVE_SESSION_KEY = 'boatRaceLiveSession'; // ② 進行状態の保存キー
 
         const urlParams = new URLSearchParams(window.location.search);
         const mode = urlParams.get('mode');
         const roomParam = urlParams.get('room');
+
+        /** ========================================================
+         * ② 進行状態の保存・復元・破棄（localStorage）
+         * ======================================================== */
+        function saveGameState() {
+            if (!isHost || !roomID) return;
+            try {
+                const session = {
+                    roomID: roomID,
+                    currentPlayIndex: currentPlayIndex,
+                    playersData: playersData,
+                    savedAt: Date.now()
+                };
+                localStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(session));
+            } catch (e) { console.warn("進行状態の保存に失敗:", e); }
+        }
+        function loadGameStateRaw() {
+            try {
+                const s = localStorage.getItem(LIVE_SESSION_KEY);
+                return s ? JSON.parse(s) : null;
+            } catch (e) { return null; }
+        }
+        function clearGameState() {
+            try { localStorage.removeItem(LIVE_SESSION_KEY); } catch (e) {}
+        }
+
+        /** ========================================================
+         * ① ホスト側スクリーンスリープ防止（WakeLock）
+         * ======================================================== */
+        function requestHostWakeLock() {
+            if ('wakeLock' in navigator) {
+                navigator.wakeLock.request('screen')
+                    .then(lock => { wakeLock = lock; })
+                    .catch(err => console.log("Host WakeLock error:", err));
+            }
+        }
+        // タブが再表示されたらWakeLockを取り直す（WakeLockは非表示時に解放されるため）
+        document.addEventListener('visibilitychange', () => {
+            if (isHost && document.visibilityState === 'visible') {
+                requestHostWakeLock();
+            }
+        });
 
         window.onload = async () => {
             const saved = await loadFromDB('boatRaceMasterData');
@@ -370,11 +420,62 @@
                 if (mode === 'admin') {
                     showPage('host-p1');
                 } else {
+                    // ② 中断データがあれば「再開 / 新規」を選択
+                    const liveSession = loadGameStateRaw();
+                    if (liveSession && liveSession.roomID && Object.keys(liveSession.playersData || {}).length > 0) {
+                        const cnt = Object.keys(liveSession.playersData).length;
+                        const doResume = confirm(
+                            `前回のゲームの途中データが見つかりました。\n\n`
+                            + `部屋番号: ${liveSession.roomID}\n`
+                            + `参加者: ${cnt} 人\n`
+                            + `中断地点: 第 ${liveSession.currentPlayIndex} レース付近\n\n`
+                            + `「OK」… 同じ部屋番号で続きから再開\n`
+                            + `「キャンセル」… この進行を破棄して新しい部屋を作成`
+                        );
+                        if (doResume) {
+                            resumeGame(liveSession);
+                            return;
+                        } else {
+                            clearGameState();
+                        }
+                    }
                     initHostPeer();
                     showPage('host-p2');
                 }
             }
         };
+
+        // ② 中断データから再開
+        function resumeGame(session) {
+            isResumeMode = true;
+            playersData = session.playersData || {};
+            currentPlayIndex = session.currentPlayIndex || 0;
+            selectedQuestions = appData.questions.filter(q => q.include);
+
+            initHostPeer(session.roomID); // 保存した部屋番号を再利用
+            showPage('host-p2');
+            updatePlayerListUI();
+
+            const box = document.getElementById('resume-action-box');
+            box.style.display = 'block';
+            box.innerHTML = `
+                <div style="background:#fef9c3; border:2px solid #eab308; padding:12px; border-radius:8px; font-weight:bold;">
+                    ⚠️ 再開モードです。参加者の端末は自動で再接続されます（数秒かかります）。<br>
+                    全員の再接続を確認してから、下のボタンで中断地点へ進んでください。<br>
+                    <button onclick="setupQuestion(${currentPlayIndex})" style="margin-top:10px; background:#22c55e; font-size:18px;">
+                        ▶ 中断した地点（第 ${currentPlayIndex} レース）へ進む
+                    </button>
+                </div>`;
+        }
+
+        // ② 進行を破棄して新しい部屋を作り直す
+        function forceNewRoom() {
+            if (!confirm("現在の進行データを破棄して、新しい部屋番号で最初から始めます。よろしいですか？")) return;
+            clearGameState();
+            try { if (peer) peer.destroy(); } catch (e) {}
+            // 保存データを消した状態でリロードすれば、自動的に新しい部屋が作られます
+            window.location.href = window.location.pathname;
+        }
 
         function showPage(pageId) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active-page'));
@@ -560,8 +661,9 @@
         /** ========================================================
          * ホストサーバー（通信・ゲームルーム進行）
          * ======================================================== */
-        function initHostPeer() {
-            roomID = Math.random().toString(36).substring(2, 8).toUpperCase();
+        function initHostPeer(resumeRoomID = null) {
+            requestHostWakeLock(); // ① ホスト画面のスリープ防止
+            roomID = resumeRoomID || Math.random().toString(36).substring(2, 8).toUpperCase();
             peer = new Peer(roomID); 
             
             peer.on('open', (id) => {
@@ -573,6 +675,24 @@
                 new QRCode(document.getElementById("qr-container"), { text: url, width: 160, height: 160 });
                 
                 selectedQuestions = appData.questions.filter(q => q.include);
+                hostPeerRetry = 0;
+            });
+
+            // ② 部屋番号の再取得対策：以前のIDがまだ残っている場合は少し待って再試行
+            peer.on('error', (err) => {
+                console.warn("Peerエラー:", err && err.type);
+                if (err && err.type === 'unavailable-id') {
+                    if (resumeRoomID && hostPeerRetry < 3) {
+                        hostPeerRetry++;
+                        try { peer.destroy(); } catch (e) {}
+                        setTimeout(() => initHostPeer(resumeRoomID), 3000);
+                    } else {
+                        alert("以前の部屋番号がまだ使用中でした。新しい部屋番号で続行します。\n参加者は新しいQRコードから入り直してください。");
+                        try { peer.destroy(); } catch (e) {}
+                        hostPeerRetry = 0;
+                        initHostPeer(null); // 新しいIDで再生成（進行データ自体は保持）
+                    }
+                }
             });
 
             peer.on('connection', (conn) => {
@@ -594,6 +714,7 @@
                         }
                         updatePlayerListUI();
                         updateHostBetStatusUI();
+                        saveGameState(); // ② 参加・再接続のたびに保存
                         
                         let isCurrentQ0 = (currentPlayIndex === 0);
                         conn.send({ type: 'welcome', points: playersData[conn.peer].points, isExampleMode: isCurrentQ0 });
@@ -601,6 +722,7 @@
                         if (playersData[conn.peer]) {
                             playersData[conn.peer].currentBet = data.bet;
                             updateHostBetStatusUI();
+                            saveGameState(); // ② 投票確定のたびに保存
                         }
                     }
                 });
@@ -705,6 +827,12 @@
             }
 
             updateHostBetStatusUI();
+            // 再開モードの案内枠を閉じる
+            const rbox = document.getElementById('resume-action-box');
+            if (rbox) rbox.style.display = 'none';
+            isResumeMode = false;
+
+            saveGameState(); // ② レース切替時に保存
             changeHostScreen('host-p4');
             broadcast('page', { page: 'player-wait' });
         }
@@ -912,84 +1040,98 @@
         }
 
         function raceAnimationLoop(now) {
-            const elapsed = (now - raceStartTimestamp) / 1000; 
-            const goalX = 740;
-            const startX = 60;
-            const totalDistance = goalX - startX; 
+            // ① 何らかのエラーが起きても画面が固まらないよう全体を try/catch で保護
+            try {
+                const elapsed = (now - raceStartTimestamp) / 1000; 
+                const goalX = 740;
+                const startX = 60;
+                const totalDistance = goalX - startX; 
 
-            boatsState.forEach(b => {
-                if (b.goalTime !== null) return;
+                // ① 安全装置：30秒経っても終わらない場合は未ゴール艇を強制的にゴールさせる
+                if (elapsed > 30) {
+                    boatsState.forEach(b => {
+                        if (b.goalTime === null) { b.x = goalX; b.goalTime = elapsed; finishedCount++; }
+                    });
+                }
 
-                // 時間軸に対する基本進捗率 (0.0 〜 1.0)
-                let progressRatio = elapsed / b.targetGoalTime;
-                if (progressRatio > 1.0) progressRatio = 1.0;
+                boatsState.forEach(b => {
+                    if (b.goalTime !== null) return;
 
-                let basePos = 0;
+                    // 時間軸に対する基本進捗率 (0.0 〜 1.0)
+                    let progressRatio = elapsed / b.targetGoalTime;
+                    if (progressRatio > 1.0) progressRatio = 1.0;
 
-                if (b.isCloser) {
-                    // 2R以降の追い込み艇演出：
-                    // 進捗75%（後半の直線前）まではかなり後方に意図的に待機させておく
-                    if (progressRatio < 0.75) {
-                        basePos = totalDistance * Math.pow(progressRatio, 1.6) * 0.70;
+                    let basePos = 0;
+
+                    if (b.isCloser) {
+                        // 2R以降の追い込み艇演出：
+                        // 進捗75%（後半の直線前）まではかなり後方に意図的に待機させておく
+                        if (progressRatio < 0.75) {
+                            basePos = totalDistance * Math.pow(progressRatio, 1.6) * 0.70;
+                        } else {
+                            // 残り25%から驚異的な加速で一気にごぼう抜きを行う
+                            let t = (progressRatio - 0.75) / 0.25; 
+                            let startAt75 = totalDistance * Math.pow(0.75, 1.6) * 0.70;
+                            basePos = startAt75 + (totalDistance - startAt75) * Math.pow(t, 2.2);
+                        }
                     } else {
-                        // 残り25%から驚異的な加速で一気にごぼう抜きを行う
-                        let t = (progressRatio - 0.75) / 0.25; 
-                        let startAt75 = totalDistance * Math.pow(0.75, 1.6) * 0.70;
-                        basePos = startAt75 + (totalDistance - startAt75) * Math.pow(t, 2.2);
+                        // 通常ボートの滑らかな進行曲線
+                        basePos = totalDistance * Math.pow(progressRatio, 1.1); 
                     }
-                } else {
-                    // 通常ボートの滑らかな進行曲線
-                    basePos = totalDistance * Math.pow(progressRatio, 1.1); 
-                }
 
-                // 【デッドヒート感の大幅強化ロジック】
-                // 進捗95%（ゴール直前）までの長い間、激しいサイン波のゆらぎを与えて、常に順位が激しく入れ替わる団子状態を維持
-                let wobble = 0;
-                if (progressRatio > 0.02 && progressRatio < 0.95) {
-                    wobble = Math.sin(elapsed * 4.0 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.3);
-                }
+                    // 【デッドヒート感の大幅強化ロジック】
+                    // 進捗95%（ゴール直前）までの長い間、激しいサイン波のゆらぎを与えて、常に順位が激しく入れ替わる団子状態を維持
+                    let wobble = 0;
+                    if (progressRatio > 0.02 && progressRatio < 0.95) {
+                        wobble = Math.sin(elapsed * 4.0 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.3);
+                    }
 
-                b.x = startX + basePos + wobble;
+                    b.x = startX + basePos + wobble;
 
-                // 【バグ解消：順位の嘘を100%防ぐ収束制御】
-                // 残り5%（進捗95%以降）に突入した瞬間、すべてのボートの「ランダムな揺らぎ」を完全にゼロへと強制減衰させます。
-                // さらに、まだゴールしていない他のボートとの物理的な位置のねじれを防ぐため、
-                // 着順（finalRank）が遅いボートは、自分より早い着順のボートの現在座標を絶対に追い抜けないようにロックをかけます。
-                if (progressRatio >= 0.95) {
-                    let easeFactor = (1.0 - progressRatio) / 0.05; // 1.0 → 0.0に綺麗に減少
-                    b.x = startX + basePos + (wobble * easeFactor);
+                    // 【バグ解消：順位の嘘を100%防ぐ収束制御】
+                    // 残り5%（進捗95%以降）に突入した瞬間、すべてのボートの「ランダムな揺らぎ」を完全にゼロへと強制減衰させます。
+                    if (progressRatio >= 0.95) {
+                        let easeFactor = (1.0 - progressRatio) / 0.05; // 1.0 → 0.0に綺麗に減少
+                        b.x = startX + basePos + (wobble * easeFactor);
 
-                    // 先にゴールすべきボート（自分よりfinalRankの数字が小さいボート）の座標を取得
-                    let advancedBoats = boatsState.filter(item => item.finalRank < b.finalRank);
-                    if (advancedBoats.length > 0) {
-                        // 自分より上位でゴールする予定のボートの中で「最も後方にいるボートの座標 - 15px」を最大限界値とする
-                        let minAdvancedX = Math.min(...advancedBoats.map(item => item.x));
-                        if (b.x >= minAdvancedX) {
-                            b.x = minAdvancedX - 15; // 鼻差で絶対に抜かせないようロック
+                        // 先にゴールすべきボート（自分よりfinalRankの数字が小さいボート）の座標を取得
+                        let advancedBoats = boatsState.filter(item => item.finalRank < b.finalRank);
+                        if (advancedBoats.length > 0) {
+                            let minAdvancedX = Math.min(...advancedBoats.map(item => item.x));
+                            if (b.x >= minAdvancedX) {
+                                b.x = minAdvancedX - 15; // 鼻差で絶対に抜かせないようロック
+                            }
                         }
                     }
+
+                    // 絶対後退禁止ガード
+                    if (b.lastX && b.x < b.lastX) {
+                        b.x = b.lastX + 0.2; 
+                    }
+                    b.lastX = b.x;
+
+                    // ゴール判定
+                    if (elapsed >= b.targetGoalTime || b.x >= goalX) {
+                        b.x = goalX;
+                        b.goalTime = elapsed;
+                        finishedCount++;
+                    }
+                });
+
+                drawRaceCanvas();
+
+                if (boatsState.some(b => b.goalTime === null)) {
+                    raceAnimationId = requestAnimationFrame(raceAnimationLoop);
+                } else {
+                    racePhase = 'finished';
+                    handleRaceFinishedUI();
                 }
-
-                // 絶対後退禁止ガード
-                if (b.lastX && b.x < b.lastX) {
-                    b.x = b.lastX + 0.2; 
-                }
-                b.lastX = b.x;
-
-                // ゴール判定
-                if (elapsed >= b.targetGoalTime || b.x >= goalX) {
-                    b.x = goalX;
-                    b.goalTime = elapsed;
-                    finishedCount++;
-                }
-            });
-
-            drawRaceCanvas();
-
-            if (boatsState.some(b => b.goalTime === null)) {
-                raceAnimationId = requestAnimationFrame(raceAnimationLoop);
-            } else {
+            } catch (e) {
+                // ① エラーが出ても固まらせず、全艇をゴール扱いにして結果画面へ進めるようにする
+                console.error("レース処理中にエラーが発生しました:", e);
+                boatsState.forEach(b => { if (b.goalTime === null) { b.x = 740; b.goalTime = 99; } });
                 racePhase = 'finished';
+                drawRaceCanvas();
                 handleRaceFinishedUI();
             }
         }
@@ -1072,6 +1214,8 @@
                 }
             }
 
+            saveGameState(); // ② 得点確定後に保存（ここが一番重要）
+
             renderRoundRankingUI();
 
             const actionContainer = document.getElementById('next-action-container');
@@ -1093,6 +1237,7 @@
                             playersData[id].history = [100];
                             playersData[id].lastRoundEarned = 0;
                         }
+                        saveGameState(); // ② 例題後リセットも保存
                     }
                     setupQuestion(currentPlayIndex + 1);
                 };
@@ -1165,6 +1310,7 @@
         }
 
         function showFinalResult() {
+            clearGameState(); // ② ゲーム終了＝中断データを破棄（次回起動は自動で新規）
             changeHostScreen('host-final');
             const container = document.getElementById('final-ranking-container');
             container.innerHTML = "";
