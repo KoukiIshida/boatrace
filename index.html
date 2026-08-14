@@ -82,6 +82,12 @@
         /* 点滅アニメーション */
         .flash-winner { animation: flash-anime 0.5s infinite alternate; }
         @keyframes flash-anime { 0% { background-color: rgba(234, 179, 8, 0.2); border-color: #eab308; } 100% { background-color: rgba(234, 179, 8, 0.9); border-color: #ff0000; color:#000; } }
+
+        /* 補足情報の表示順ドラッグ並べ替え */
+        .supp-order-list { display: flex; gap: 8px; margin-top: 6px; }
+        .supp-order-item { border: 2px solid #cbd5e1; background: #eef2ff; padding: 8px 14px; border-radius: 6px; cursor: grab; font-weight: bold; user-select: none; }
+        .supp-order-item:active { cursor: grabbing; }
+        .supp-order-item.dragging { opacity: 0.4; }
     </style>
 </head>
 <body>
@@ -413,7 +419,7 @@
                 isHost = true;
                 if (!appData.questions || appData.questions.length === 0) {
                     appData.questions = [];
-                    appData.questions.push({ title: '0レース目(例題)', text: '例題デモです。操作やタイム感をテストしましょう！', layout: 'text', choices: Array.from({length:6}, () => ({text:'', img:null})), ans: '1,2,3,4,5,6', supp: '例題のため得点は本番に引き継がれません。', include: true, done: false });
+                    appData.questions.push({ title: '0レース目(例題)', text: '例題デモです。操作やタイム感をテストしましょう！', layout: 'text', choices: Array.from({length:6}, () => ({text:'', img:null})), ans: '1,2,3,4,5,6', supp: '例題のため得点は本番に引き継がれません。', suppImg: null, suppOrder: ['text','image'], include: true, done: false });
                     for(let i=1; i<=3; i++) appData.questions.push(createEmptyQuestionObject());
                 }
                 renderAdminPage();
@@ -492,6 +498,7 @@
             container.innerHTML = "";
 
             appData.questions.forEach((q, idx) => {
+                const suppOrder = q.suppOrder || ['text', 'image'];
                 const div = document.createElement('div');
                 div.className = 'question-block';
                 div.id = `q-block-element-${idx}`;
@@ -535,11 +542,24 @@
                             `).join('')}
                         </div><br>
 
-                        <b>正解順位（1位〜6位の艇番をカンマ区切り。例: 1,3,2,4,5,6）</b><br>
-                        <input type="text" id="q-ans-${idx}" value="${q.ans || '1,2,3,4,5,6'}" placeholder="1,2,3,4,5,6" style="width:50%; text-align:center; font-weight:bold;"><br><br>
+                        <b>正解順位（1位から順に艇番を続けて入力。例: 132456）</b><br>
+                        <input type="text" id="q-ans-${idx}" value="${(q.ans || '1,2,3,4,5,6').replace(/,/g,'')}" placeholder="123456" maxlength="6" style="width:50%; text-align:center; font-weight:bold; font-size:20px; letter-spacing:4px;"><br><br>
                         
-                        <b>結果発表時の補足情報</b>
+                        <b>結果発表時の補足情報</b><br>
                         <textarea id="q-supp-${idx}" style="width:100%; height:40px;">${q.supp || ''}</textarea>
+                        <label>補足画像: <input type="file" id="q-supp-img-${idx}" accept="image/*"></label>
+                        ${q.suppImg ? `<small style="color:green;">✓画像あり</small> <button type="button" onclick="removeSuppImg(${idx})" style="background:#ef4444; padding:2px 8px; font-size:11px;">画像を削除</button>` : ''}
+                        <div style="margin-top:8px;">
+                            <b>結果発表での表示順（ドラッグで前後を入れ替え）:</b>
+                            <div id="supp-order-${idx}" class="supp-order-list" data-idx="${idx}">
+                                ${suppOrder.map(t => `
+                                    <div class="supp-order-item" draggable="true" data-type="${t}"
+                                        ondragstart="suppDragStart(event)" ondragover="suppDragOver(event)" ondrop="suppDrop(event)" ondragend="suppDragEnd(event)">
+                                        ${t === 'text' ? '📝 テキスト' : '🖼️ 画像'}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
 
                         <hr style="border-style:dashed;">
                         <button type="button" onclick="removeQuestion(${idx})" style="background:#ef4444; padding:4px 10px; font-size:12px;">この枠を削除</button>
@@ -550,11 +570,41 @@
             updateSelectedListSection3();
         }
 
+        // 補足の表示順ドラッグ処理（テキスト/画像 2要素の並べ替え）
+        let suppDragEl = null;
+        function suppDragStart(e) { suppDragEl = e.currentTarget; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
+        function suppDragOver(e) { e.preventDefault(); }
+        function suppDrop(e) {
+            e.preventDefault();
+            const target = e.currentTarget;
+            const list = target.parentNode;
+            if (suppDragEl && suppDragEl !== target) {
+                const items = [...list.children];
+                if (items.indexOf(suppDragEl) < items.indexOf(target)) list.insertBefore(suppDragEl, target.nextSibling);
+                else list.insertBefore(suppDragEl, target);
+                const idx = parseInt(list.dataset.idx);
+                if (appData.questions[idx]) appData.questions[idx].suppOrder = [...list.children].map(c => c.dataset.type);
+            }
+        }
+        function suppDragEnd(e) { e.currentTarget.classList.remove('dragging'); suppDragEl = null; }
+
+        // 補足画像の削除
+        function removeSuppImg(idx) {
+            captureCurrentFormInputs();
+            if (appData.questions[idx]) appData.questions[idx].suppImg = null;
+            renderAdminPage();
+            toggleQDetails(idx);
+        }
+
+        // 結果発表用HTMLエスケープ
+        function escapeHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
         function createEmptyQuestionObject() {
             return {
                 title: '新しいレース', text: '予想してください。', layout: 'text',
                 choices: Array.from({length:6}, () => ({text:'', img:null})),
-                ans: '1,2,3,4,5,6', supp: '', include: true, done: false
+                ans: '1,2,3,4,5,6', supp: '', suppImg: null, suppOrder: ['text','image'],
+                include: true, done: false
             };
         }
         function toggleQDetails(idx) {
@@ -596,8 +646,14 @@
                 let titleEl = document.getElementById(`q-title-${idx}`); if(titleEl) q.title = titleEl.value;
                 let textEl = document.getElementById(`q-text-${idx}`); if(textEl) q.text = textEl.value;
                 let layoutEl = document.getElementById(`q-layout-${idx}`); if(layoutEl) q.layout = layoutEl.value;
-                let ansEl = document.getElementById(`q-ans-${idx}`); if(ansEl) q.ans = ansEl.value;
+                // 正解順位：「123456」形式を内部の "1,2,3,4,5,6" 形式へ変換して保持
+                let ansEl = document.getElementById(`q-ans-${idx}`);
+                if(ansEl) {
+                    let digits = ansEl.value.replace(/[^1-6]/g, '').split('');
+                    if(digits.length > 0) q.ans = digits.join(',');
+                }
                 let suppEl = document.getElementById(`q-supp-${idx}`); if(suppEl) q.supp = suppEl.value;
+                let orderEl = document.getElementById(`supp-order-${idx}`); if(orderEl) q.suppOrder = [...orderEl.children].map(c => c.dataset.type);
                 let incEl = document.getElementById(`q-include-${idx}`); if(incEl) q.include = incEl.checked;
                 let doneEl = document.getElementById(`q-done-${idx}`); if(doneEl) q.done = doneEl.checked;
 
@@ -642,6 +698,20 @@
 
             captureCurrentFormInputs();
 
+            // 「出題する」レースの正解順位が「1〜6を1回ずつ計6艇」になっているか検証
+            for (let idx = 0; idx < appData.questions.length; idx++) {
+                const q = appData.questions[idx];
+                if (!q.include) continue;
+                const digits = (q.ans || '').split(',').map(v => v.trim()).filter(Boolean);
+                const uniq = new Set(digits);
+                const valid = digits.length === 6 && uniq.size === 6 && digits.every(d => ['1','2','3','4','5','6'].includes(d));
+                if (!valid) {
+                    alert(`「${q.title || '未設定'}」の正解順位が正しくありません。\n1〜6の艇番を1回ずつ、計6桁で入力してください（例: 132456）。`);
+                    toggleQDetails(idx);
+                    return;
+                }
+            }
+
             for (let idx = 0; idx < appData.questions.length; idx++) {
                 const q = appData.questions[idx];
                 q.order = idx;
@@ -650,6 +720,9 @@
                     const f = document.getElementById(`q-c-img-${idx}-${n}`).files[0];
                     if(f) q.choices[n-1].img = await fileToBase64(f);
                 }
+                // 補足画像の保存
+                const sf = document.getElementById(`q-supp-img-${idx}`).files[0];
+                if(sf) q.suppImg = await fileToBase64(sf);
             }
 
             await saveToDB('boatRaceMasterData', appData);
@@ -1186,7 +1259,16 @@
 
             const winOrders = targetOrders;
             document.getElementById('text-final-orders').innerText = winOrders.slice(0,3).join(' - ');
-            document.getElementById('text-supplementary-info').innerText = q.supp || "特記事項なし";
+
+            // 補足情報：テキスト＋画像を、指定された表示順で描画
+            const suppBox = document.getElementById('text-supplementary-info');
+            const suppOrder = q.suppOrder || ['text', 'image'];
+            const suppParts = suppOrder.map(t => {
+                if (t === 'text') return q.supp ? `<div>${escapeHtml(q.supp).replace(/\n/g, '<br>')}</div>` : '';
+                if (t === 'image') return q.suppImg ? `<img src="${q.suppImg}" style="max-height:150px; display:block; margin:6px auto;">` : '';
+                return '';
+            }).filter(Boolean);
+            suppBox.innerHTML = suppParts.length ? suppParts.join('') : "特記事項なし";
 
             for(let id in playersData) {
                 const p = playersData[id];
