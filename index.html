@@ -408,7 +408,7 @@
             document.getElementById('img-popup-content').src = '';
         }
 
-        // レース進行の表記（第Xレース／全Nレース、最終は「最終レース」）
+        // レース進行の表記
         function raceProgressLabel() {
             let pureRaceCount = selectedQuestions.length - 1;
             if (currentPlayIndex >= pureRaceCount) return "最終レース";
@@ -1066,16 +1066,27 @@
                 const BOAT_TIP = 24;                     // 艇の先端までの長さ（描画と一致）
                 const finishBackX = goalX - BOAT_TIP;   // 先端が赤線に触れるときの艇の後端座標
                 const waitLineX = finishBackX - 6;      // ゴール手前で団子になる待機ライン
+                const COAST_SPEED = 4;                  // ゴール後、艇全体が線を越えるまでの前進速度
 
-                // 安全装置：35秒で強制終了（着順どおりに残り艇を確定）
+                // 安全装置：35秒で強制終了（着順どおりに残り艇を線の外まで出して確定）
                 if (elapsed > 35) {
                     boatsState.filter(b => b.goalTime === null)
                         .sort((a, b) => a.finalRank - b.finalRank)
-                        .forEach(b => { b.x = finishBackX; b.goalTime = elapsed; finishedCount++; });
+                        .forEach(b => { b.x = goalX; b.goalTime = elapsed; finishedCount++; });
                 }
 
                 boatsState.forEach(b => {
-                    if (b.goalTime !== null) return;
+                    // 既に艇全体が赤線を越えて停止済み
+                    if (b.x >= goalX) { b.x = goalX; return; }
+
+                    // 先端が赤線を越えて着順確定済み → 艇全体が赤線を越えるまで滑らかに前進して停止
+                    if (b.goalTime !== null) {
+                        b.x = Math.min(goalX, b.x + COAST_SPEED);
+                        b.lastX = b.x;
+                        return;
+                    }
+
+                    // --- まだゴールしていない艇（進行＋デッドヒート＋待機ライン） ---
                     let progressRatio = elapsed / b.targetGoalTime;
                     if (progressRatio > 1.0) progressRatio = 1.0;
 
@@ -1099,13 +1110,13 @@
                     b.x = startX + basePos + wobble;
                     if (b.lastX && b.x < b.lastX) b.x = b.lastX + 0.2;
 
+                    // 着順保証：上位艇が着順確定するまで手前で待機
                     let predecessorsPending = boatsState.some(o => o.finalRank < b.finalRank && o.goalTime === null);
                     if (predecessorsPending) {
                         if (b.x > waitLineX) b.x = waitLineX;
                     } else {
-                        // 先端（b.x + BOAT_TIP）が赤線に到達したらゴール
+                        // 先端（b.x + BOAT_TIP）が赤線に到達したら着順確定（座標はスナップせず、以降 coast で全体を通過）
                         if (elapsed >= b.targetGoalTime || (b.x + BOAT_TIP) >= goalX) {
-                            b.x = finishBackX;   // 先端がちょうど赤線に触れる位置で停止
                             b.goalTime = elapsed;
                             finishedCount++;
                         }
@@ -1115,7 +1126,8 @@
 
                 drawRaceCanvas();
 
-                if (boatsState.some(b => b.goalTime === null)) {
+                // 全艇が完全に赤線を越えた（艇全体が通過）まで継続
+                if (boatsState.some(b => b.x < goalX)) {
                     raceAnimationId = requestAnimationFrame(raceAnimationLoop);
                 } else {
                     racePhase = 'finished';
@@ -1123,9 +1135,9 @@
                 }
             } catch (e) {
                 console.error("レース処理中にエラー:", e);
-                boatsState.filter(b => b.goalTime === null)
+                boatsState.filter(b => b.x < 740)
                     .sort((a, b) => a.finalRank - b.finalRank)
-                    .forEach(b => { b.x = 740 - 24; b.goalTime = 99; });
+                    .forEach(b => { b.x = 740; if(b.goalTime === null) b.goalTime = 99; });
                 racePhase = 'finished';
                 drawRaceCanvas();
                 handleRaceFinishedUI();
@@ -1175,12 +1187,12 @@
 
             const winOrders = targetOrders;
 
-            // 確定順位（1〜3着）を、艇番＋選択肢テキスト付きで表示
+            // 確定順位（1〜3着）を、艇番＋選択肢テキストで表示（「番」は付けない）
             const ordersHtml = winOrders.slice(0,3).map((num, i) => {
                 const ch = q.choices[num-1] || {};
                 const label = ch.text ? escapeHtml(ch.text) : '';
                 return `<div style="margin:4px 0; white-space:nowrap;">
-                            <b style="font-size:22px; color:#ef4444;">${i+1}着 ${num}番</b>
+                            <b style="font-size:22px; color:#ef4444;">${i+1}着 ${num}</b>
                             ${label ? `<span style="font-size:15px; color:#111; margin-left:4px;">${label}</span>` : ''}
                         </div>`;
             }).join('');
@@ -1518,7 +1530,6 @@
             }
         }
 
-        // スライダー/数値入力の同期（入力中は強制的に1へ戻さない）
         function syncBetPoints(trigger) {
             const rangeInput = document.getElementById('range-bet-points');
             const numInput = document.getElementById('num-bet-points');
