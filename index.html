@@ -88,6 +88,15 @@
         .supp-order-item { border: 2px solid #cbd5e1; background: #eef2ff; padding: 8px 14px; border-radius: 6px; cursor: grab; font-weight: bold; user-select: none; }
         .supp-order-item:active { cursor: grabbing; }
         .supp-order-item.dragging { opacity: 0.4; }
+
+        /* レース投票一覧（コンパクト表示） */
+        #race-bottom-bets-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+        .race-bet-card { background: #fff; border: 2px solid #cbd5e1; padding: 6px 8px; border-radius: 6px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .race-bet-card strong { display: block; color: #475569; font-size: 13px; margin-bottom: 2px; }
+
+        /* 画像ポップアップ */
+        #img-popup-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 9999; justify-content: center; align-items: center; cursor: zoom-out; }
+        #img-popup-content { max-width: 92%; max-height: 92%; border: 4px solid #fff; border-radius: 8px; object-fit: contain; }
     </style>
 </head>
 <body>
@@ -123,7 +132,6 @@
         <div id="qr-container"></div>
         <p style="text-align:center; font-weight:bold;"><a id="join-url" href="#" target="_blank"></a></p>
 
-        <!-- ② 再開モード用アクション枠 -->
         <div id="resume-action-box" style="text-align:center; margin:10px 0; display:none;"></div>
 
         <div style="text-align:center;">
@@ -180,8 +188,7 @@
             <button id="btn-start-race" onclick="startRaceAnimation()" style="background:#ef4444; font-size:20px; padding:12px 40px;">レース開始！</button>
         </div>
 
-        <h3>本レースの投票一覧</h3>
-        <div id="race-bottom-bets-container" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;"></div>
+        <div id="race-bottom-bets-container"></div>
 
         <div style="text-align:center; margin-top:25px; display:none;" id="race-to-results-box">
             <button onclick="goToResultPresentation()" style="background:#005bac; font-size:20px; padding:12px 35px;">結果発表画面へ</button>
@@ -190,8 +197,8 @@
 
     <div id="host-p7" class="page">
         <h1 id="host-p7-title">🏁 レース確定結果 🏁</h1>
-        <div style="display:flex; gap:20px; justify-content:center; align-items:center; margin:15px 0;">
-            <div style="font-size:36px; font-weight:bold; color:#ef4444; border:4px double #ef4444; padding:5px 20px;" id="text-final-orders">1-2-3</div>
+        <div style="display:flex; gap:20px; justify-content:center; align-items:center; margin:15px 0; flex-wrap:wrap;">
+            <div style="border:4px double #ef4444; padding:8px 18px; min-width:180px;" id="text-final-orders">1-2-3</div>
             <div style="font-size:16px; background:#fff; padding:10px; border-radius:6px; border:1px solid #ccc; flex-grow:1;" id="text-supplementary-info">補足情報が入ります。</div>
         </div>
 
@@ -269,7 +276,7 @@
         <h3>3. 賭けるポイントを決定</h3>
         <div class="flex-box">
             <input type="range" id="range-bet-points" class="range-input" min="1" max="100" step="1" oninput="syncBetPoints('range')">
-            <input type="number" id="num-bet-points" min="1" style="width:90px; text-align:center;" oninput="syncBetPoints('num')">
+            <input type="number" id="num-bet-points" min="1" style="width:90px; text-align:center;" oninput="syncBetPoints('num')" onblur="clampBetPoints()">
             <span>pt</span>
         </div>
 
@@ -281,6 +288,11 @@
         </div>
 
         <button onclick="lockAndConfirmBet()" style="background:#eab308; color:#000; width:100%; font-size:18px; margin-top:15px; padding:12px;">🔒 オッズを確定する</button>
+    </div>
+
+    <!-- 画像ポップアップ -->
+    <div id="img-popup-overlay" onclick="closeImgPopup()">
+        <img id="img-popup-content" src="" alt="">
     </div>
 
     <script>
@@ -347,44 +359,33 @@
         let playersData = {}; 
         let isHost = false;
         let wakeLock = null; 
-        let hostPeerRetry = 0;          // ② 部屋番号再取得のリトライ回数
-        let isResumeMode = false;       // ② 再開モードフラグ
+        let hostPeerRetry = 0;
+        let isResumeMode = false;
 
         const POOL_NAMES = { tan: '単勝', fuk2: '２連複', fuk3: '３連複', tan2: '２連単', tan3: '３連単' };
-        const LIVE_SESSION_KEY = 'boatRaceLiveSession'; // ② 進行状態の保存キー
+        const LIVE_SESSION_KEY = 'boatRaceLiveSession';
 
         const urlParams = new URLSearchParams(window.location.search);
         const mode = urlParams.get('mode');
         const roomParam = urlParams.get('room');
 
-        /** ========================================================
-         * ② 進行状態の保存・復元・破棄（localStorage）
-         * ======================================================== */
+        /** ② 進行状態の保存・復元・破棄 */
         function saveGameState() {
             if (!isHost || !roomID) return;
             try {
-                const session = {
-                    roomID: roomID,
-                    currentPlayIndex: currentPlayIndex,
-                    playersData: playersData,
-                    savedAt: Date.now()
-                };
+                const session = { roomID, currentPlayIndex, playersData, savedAt: Date.now() };
                 localStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(session));
             } catch (e) { console.warn("進行状態の保存に失敗:", e); }
         }
         function loadGameStateRaw() {
-            try {
-                const s = localStorage.getItem(LIVE_SESSION_KEY);
-                return s ? JSON.parse(s) : null;
-            } catch (e) { return null; }
+            try { const s = localStorage.getItem(LIVE_SESSION_KEY); return s ? JSON.parse(s) : null; }
+            catch (e) { return null; }
         }
         function clearGameState() {
             try { localStorage.removeItem(LIVE_SESSION_KEY); } catch (e) {}
         }
 
-        /** ========================================================
-         * ① ホスト側スクリーンスリープ防止（WakeLock）
-         * ======================================================== */
+        /** ① ホスト側スクリーンスリープ防止 */
         function requestHostWakeLock() {
             if ('wakeLock' in navigator) {
                 navigator.wakeLock.request('screen')
@@ -392,12 +393,27 @@
                     .catch(err => console.log("Host WakeLock error:", err));
             }
         }
-        // タブが再表示されたらWakeLockを取り直す（WakeLockは非表示時に解放されるため）
         document.addEventListener('visibilitychange', () => {
-            if (isHost && document.visibilityState === 'visible') {
-                requestHostWakeLock();
-            }
+            if (isHost && document.visibilityState === 'visible') requestHostWakeLock();
         });
+
+        /** 画像ポップアップ */
+        function openImgPopup(src) {
+            const o = document.getElementById('img-popup-overlay');
+            document.getElementById('img-popup-content').src = src;
+            o.style.display = 'flex';
+        }
+        function closeImgPopup() {
+            document.getElementById('img-popup-overlay').style.display = 'none';
+            document.getElementById('img-popup-content').src = '';
+        }
+
+        // レース進行の表記（第Xレース／全Nレース、最終は「最終レース」）
+        function raceProgressLabel() {
+            let pureRaceCount = selectedQuestions.length - 1;
+            if (currentPlayIndex >= pureRaceCount) return "最終レース";
+            return `第 ${currentPlayIndex} レース（全 ${pureRaceCount} レース）`;
+        }
 
         window.onload = async () => {
             const saved = await loadFromDB('boatRaceMasterData');
@@ -426,7 +442,6 @@
                 if (mode === 'admin') {
                     showPage('host-p1');
                 } else {
-                    // ② 中断データがあれば「再開 / 新規」を選択
                     const liveSession = loadGameStateRaw();
                     if (liveSession && liveSession.roomID && Object.keys(liveSession.playersData || {}).length > 0) {
                         const cnt = Object.keys(liveSession.playersData).length;
@@ -438,12 +453,8 @@
                             + `「OK」… 同じ部屋番号で続きから再開\n`
                             + `「キャンセル」… この進行を破棄して新しい部屋を作成`
                         );
-                        if (doResume) {
-                            resumeGame(liveSession);
-                            return;
-                        } else {
-                            clearGameState();
-                        }
+                        if (doResume) { resumeGame(liveSession); return; }
+                        else { clearGameState(); }
                     }
                     initHostPeer();
                     showPage('host-p2');
@@ -451,14 +462,13 @@
             }
         };
 
-        // ② 中断データから再開
         function resumeGame(session) {
             isResumeMode = true;
             playersData = session.playersData || {};
             currentPlayIndex = session.currentPlayIndex || 0;
             selectedQuestions = appData.questions.filter(q => q.include);
 
-            initHostPeer(session.roomID); // 保存した部屋番号を再利用
+            initHostPeer(session.roomID);
             showPage('host-p2');
             updatePlayerListUI();
 
@@ -474,12 +484,10 @@
                 </div>`;
         }
 
-        // ② 進行を破棄して新しい部屋を作り直す
         function forceNewRoom() {
             if (!confirm("現在の進行データを破棄して、新しい部屋番号で最初から始めます。よろしいですか？")) return;
             clearGameState();
             try { if (peer) peer.destroy(); } catch (e) {}
-            // 保存データを消した状態でリロードすれば、自動的に新しい部屋が作られます
             window.location.href = window.location.pathname;
         }
 
@@ -490,7 +498,7 @@
         }
 
         /** ========================================================
-         * 管理画面（事前問題・スライド順序変更・ルール設定）処理群
+         * 管理画面 処理群
          * ======================================================== */
         function renderAdminPage() {
             document.getElementById('rule-editor').innerHTML = appData.ruleText || "";
@@ -570,7 +578,6 @@
             updateSelectedListSection3();
         }
 
-        // 補足の表示順ドラッグ処理（テキスト/画像 2要素の並べ替え）
         let suppDragEl = null;
         function suppDragStart(e) { suppDragEl = e.currentTarget; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
         function suppDragOver(e) { e.preventDefault(); }
@@ -588,7 +595,6 @@
         }
         function suppDragEnd(e) { e.currentTarget.classList.remove('dragging'); suppDragEl = null; }
 
-        // 補足画像の削除
         function removeSuppImg(idx) {
             captureCurrentFormInputs();
             if (appData.questions[idx]) appData.questions[idx].suppImg = null;
@@ -596,7 +602,6 @@
             toggleQDetails(idx);
         }
 
-        // 結果発表用HTMLエスケープ
         function escapeHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
         function createEmptyQuestionObject() {
@@ -632,11 +637,9 @@
             let targetIdx = idx + direction;
             if (targetIdx < 0 || targetIdx >= appData.questions.length) return; 
             captureCurrentFormInputs();
-            
             let temp = appData.questions[idx];
             appData.questions[idx] = appData.questions[targetIdx];
             appData.questions[targetIdx] = temp;
-            
             renderAdminPage();
         }
 
@@ -646,7 +649,6 @@
                 let titleEl = document.getElementById(`q-title-${idx}`); if(titleEl) q.title = titleEl.value;
                 let textEl = document.getElementById(`q-text-${idx}`); if(textEl) q.text = textEl.value;
                 let layoutEl = document.getElementById(`q-layout-${idx}`); if(layoutEl) q.layout = layoutEl.value;
-                // 正解順位：「123456」形式を内部の "1,2,3,4,5,6" 形式へ変換して保持
                 let ansEl = document.getElementById(`q-ans-${idx}`);
                 if(ansEl) {
                     let digits = ansEl.value.replace(/[^1-6]/g, '').split('');
@@ -667,12 +669,7 @@
         function updateSelectedListSection3() {
             const listDiv = document.getElementById('selected-questions-list');
             let targetQuestions = [];
-
-            appData.questions.forEach((q, idx) => {
-                if (q.include) {
-                    targetQuestions.push({ qRef: q, idx: idx });
-                }
-            });
+            appData.questions.forEach((q, idx) => { if (q.include) targetQuestions.push({ qRef: q, idx }); });
 
             if(targetQuestions.length === 0) {
                 listDiv.innerHTML = "<p style='color:red; font-weight:bold;'>※現在「出題する」にチェックが入っているレースはありません。</p>";
@@ -681,11 +678,8 @@
 
             let html = `<ol style="font-weight:bold; font-size:15px; background:#f8fafc; padding:15px 30px; border-radius:6px; border:1px solid #cbd5e1; max-width:450px;">`;
             targetQuestions.forEach((item, i) => {
-                if (i === 0) {
-                    html += `<li style="color:#ef4444; margin-bottom:4px;">${item.qRef.title || '未設定'} (練習用・0レース目扱い)</li>`;
-                } else {
-                    html += `<li style="margin-bottom:4px;">${item.qRef.title || '未設定'} (本番第 ${i} 戦)</li>`;
-                }
+                if (i === 0) html += `<li style="color:#ef4444; margin-bottom:4px;">${item.qRef.title || '未設定'} (練習用・0レース目扱い)</li>`;
+                else html += `<li style="margin-bottom:4px;">${item.qRef.title || '未設定'} (本番第 ${i} 戦)</li>`;
             });
             html += `</ol>`;
             listDiv.innerHTML = html;
@@ -698,7 +692,6 @@
 
             captureCurrentFormInputs();
 
-            // 「出題する」レースの正解順位が「1〜6を1回ずつ計6艇」になっているか検証
             for (let idx = 0; idx < appData.questions.length; idx++) {
                 const q = appData.questions[idx];
                 if (!q.include) continue;
@@ -715,12 +708,10 @@
             for (let idx = 0; idx < appData.questions.length; idx++) {
                 const q = appData.questions[idx];
                 q.order = idx;
-
                 for(let n=1; n<=6; n++) {
                     const f = document.getElementById(`q-c-img-${idx}-${n}`).files[0];
                     if(f) q.choices[n-1].img = await fileToBase64(f);
                 }
-                // 補足画像の保存
                 const sf = document.getElementById(`q-supp-img-${idx}`).files[0];
                 if(sf) q.suppImg = await fileToBase64(sf);
             }
@@ -732,10 +723,10 @@
 
 
         /** ========================================================
-         * ホストサーバー（通信・ゲームルーム進行）
+         * ホストサーバー（通信・進行）
          * ======================================================== */
         function initHostPeer(resumeRoomID = null) {
-            requestHostWakeLock(); // ① ホスト画面のスリープ防止
+            requestHostWakeLock();
             roomID = resumeRoomID || Math.random().toString(36).substring(2, 8).toUpperCase();
             peer = new Peer(roomID); 
             
@@ -743,15 +734,12 @@
                 const url = window.location.href.split('?')[0] + '?room=' + id;
                 document.getElementById('join-url').innerText = url;
                 document.getElementById('join-url').href = url;
-                
                 document.getElementById("qr-container").innerHTML = "";
                 new QRCode(document.getElementById("qr-container"), { text: url, width: 160, height: 160 });
-                
                 selectedQuestions = appData.questions.filter(q => q.include);
                 hostPeerRetry = 0;
             });
 
-            // ② 部屋番号の再取得対策：以前のIDがまだ残っている場合は少し待って再試行
             peer.on('error', (err) => {
                 console.warn("Peerエラー:", err && err.type);
                 if (err && err.type === 'unavailable-id') {
@@ -763,7 +751,7 @@
                         alert("以前の部屋番号がまだ使用中でした。新しい部屋番号で続行します。\n参加者は新しいQRコードから入り直してください。");
                         try { peer.destroy(); } catch (e) {}
                         hostPeerRetry = 0;
-                        initHostPeer(null); // 新しいIDで再生成（進行データ自体は保持）
+                        initHostPeer(null);
                     }
                 }
             });
@@ -777,35 +765,25 @@
                             playersData[conn.peer] = playersData[existingPeerId];
                             if(existingPeerId !== conn.peer) delete playersData[existingPeerId];
                         } else {
-                            playersData[conn.peer] = { 
-                                name: data.name, 
-                                points: 100, 
-                                history: [100], 
-                                currentBet: null,
-                                lastRoundEarned: 0 
-                            };
+                            playersData[conn.peer] = { name: data.name, points: 100, history: [100], currentBet: null, lastRoundEarned: 0 };
                         }
                         updatePlayerListUI();
                         updateHostBetStatusUI();
-                        saveGameState(); // ② 参加・再接続のたびに保存
-                        
+                        saveGameState();
                         let isCurrentQ0 = (currentPlayIndex === 0);
                         conn.send({ type: 'welcome', points: playersData[conn.peer].points, isExampleMode: isCurrentQ0 });
                     } else if (data.type === 'submit_bet') {
                         if (playersData[conn.peer]) {
                             playersData[conn.peer].currentBet = data.bet;
                             updateHostBetStatusUI();
-                            saveGameState(); // ② 投票確定のたびに保存
+                            saveGameState();
                         }
                     }
                 });
-                conn.on('close', () => {
-                    delete connections[conn.peer];
-                });
+                conn.on('close', () => { delete connections[conn.peer]; });
             });
         }
 
-        // レース結果後、各参加者へ最新の所持ポイントを送信（①②の同期）
         function sendPointsUpdate() {
             for (let id in playersData) {
                 if (connections[id]) {
@@ -849,45 +827,35 @@
             showPage(hostPage);
             if (hostPage === 'host-p3') {
                 document.getElementById('display-rule-content').innerHTML = appData.ruleText;
-                document.getElementById('display-rule-img-container').innerHTML = appData.ruleImg ? `<img src="${appData.ruleImg}">` : "";
-                
+                document.getElementById('display-rule-img-container').innerHTML = appData.ruleImg ? `<img src="${appData.ruleImg}" onclick="openImgPopup(this.src)" style="cursor:pointer;">` : "";
                 let nextBtn = document.getElementById('btn-to-first-race');
-                if(selectedQuestions[0]) {
-                    nextBtn.innerText = `0レース目（例題）へ`;
-                } else {
-                    nextBtn.innerText = `第1レースへ`;
-                }
+                nextBtn.innerText = selectedQuestions[0] ? `0レース目（例題）へ` : `第1レースへ`;
             }
             if (playerPage) broadcast('page', { page: playerPage });
         }
 
 
         /** ========================================================
-         * クイズメインコアゲーム処理
+         * クイズメインコア
          * ======================================================== */
         function setupQuestion(listIndex) {
             if (selectedQuestions.length === 0) {
                 alert("出題対象に指定されたレースがありません。管理画面でチェックを入れてください。");
                 return;
             }
-            if(listIndex >= selectedQuestions.length) {
-                showFinalResult();
-                return;
-            }
+            if(listIndex >= selectedQuestions.length) { showFinalResult(); return; }
             
             currentPlayIndex = listIndex;
             const q = selectedQuestions[currentPlayIndex];
             const isQ0 = (currentPlayIndex === 0); 
+            const raceName = q.title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
 
-            for (let id in playersData) {
-                playersData[id].currentBet = null;
-            }
+            for (let id in playersData) playersData[id].currentBet = null;
 
             if(isQ0) {
-                document.getElementById('host-q-title').innerText = `${q.title || '0レース目(例題)'} / 本番直前体験`;
+                document.getElementById('host-q-title').innerText = `${raceName} / 本番直前体験`;
             } else {
-                let pureRaceCount = selectedQuestions.length - 1; 
-                document.getElementById('host-q-title').innerText = `${q.title || `第${currentPlayIndex}レース`} / 全 ${pureRaceCount} レース`;
+                document.getElementById('host-q-title').innerText = `${raceName} / ${raceProgressLabel()}`;
             }
 
             document.getElementById('host-q-text-view').innerText = q.text;
@@ -899,22 +867,19 @@
                 let cardInner = `<span class="boat-num b${i}">${i}</span>`;
                 let textEl = `<div style="font-size:14px; margin-top:5px;">${ch.text || '---'}</div>`;
                 let imgEl = ch.img ? `<img src="${ch.img}" style="max-height:70px;">` : '';
-                
                 if(q.layout === 'text') cardInner += textEl;
                 else if(q.layout === 'image') cardInner += imgEl;
                 else if(q.layout === 'top') cardInner += (textEl + imgEl);
                 else if(q.layout === 'bottom') cardInner += (imgEl + textEl);
-
                 bContainer.innerHTML += `<div class="boat-card b${i}">${cardInner}</div>`;
             }
 
             updateHostBetStatusUI();
-            // 再開モードの案内枠を閉じる
             const rbox = document.getElementById('resume-action-box');
             if (rbox) rbox.style.display = 'none';
             isResumeMode = false;
 
-            saveGameState(); // ② レース切替時に保存
+            saveGameState();
             changeHostScreen('host-p4');
             broadcast('page', { page: 'player-wait' });
         }
@@ -924,25 +889,18 @@
             let remainRaces = selectedQuestions.length - 1 - (currentPlayIndex - 1);
             if(isQ0) remainRaces = selectedQuestions.length - 1;
             const isLast = (remainRaces === 1 && !isQ0);
-            
-            broadcast('request_bet', {
-                remainRaces: remainRaces,
-                isLast: isLast,
-                isExampleMode: isQ0
-            });
+            broadcast('request_bet', { remainRaces, isLast, isExampleMode: isQ0 });
         }
 
         function showAllBets() {
             changeHostScreen('host-p5');
             const container = document.getElementById('all-bets-ranking-container');
             container.innerHTML = "";
-
             let list = [];
             for(let id in playersData) {
                 const p = playersData[id];
                 let betString = "未投票";
                 let potentialEarn = 0; 
-                
                 if(p.currentBet) {
                     const b = p.currentBet;
                     potentialEarn = b.pts * b.odds;
@@ -950,13 +908,8 @@
                 }
                 list.push({ name: p.name, pEarn: potentialEarn, desc: betString });
             }
-
             list.sort((a,b) => b.pEarn - a.pEarn);
-
-            if(list.length === 0) {
-                container.innerHTML = "<p style='text-align:center;'>参加者がいません。</p>";
-                return;
-            }
+            if(list.length === 0) { container.innerHTML = "<p style='text-align:center;'>参加者がいません。</p>"; return; }
 
             let tHtml = `<table><tr><th>順位</th><th>参加者</th><th>賭け内容</th><th>的中時の獲得ポイント（単体）</th></tr>`;
             list.forEach((item, index) => {
@@ -968,7 +921,7 @@
 
 
         /** ========================================================
-         * 2D Canvas ボートレースアニメーション制御エンジン (大改修版)
+         * レースアニメーション
          * ======================================================== */
         let raceAnimationId = null;
         let raceStartTimestamp = null;
@@ -980,25 +933,25 @@
         function goToRaceScreen() {
             changeHostScreen('host-p6');
             const isQ0 = (currentPlayIndex === 0);
+            const raceName = selectedQuestions[currentPlayIndex].title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
 
             if(isQ0) {
-                document.getElementById('host-p6-title').innerText = `${selectedQuestions[currentPlayIndex].title || '0レース目(例題)'} / 体験デモ走行`;
+                document.getElementById('host-p6-title').innerText = `${raceName} / 体験デモ走行`;
             } else {
-                let pureRaceCount = selectedQuestions.length - 1;
-                document.getElementById('host-p6-title').innerText = `${selectedQuestions[currentPlayIndex].title || `第${currentPlayIndex}レース`} / 全 ${pureRaceCount} レース`;
+                document.getElementById('host-p6-title').innerText = `${raceName} / ${raceProgressLabel()}`;
             }
 
             const bCont = document.getElementById('race-bottom-bets-container');
             bCont.innerHTML = "";
             for(let id in playersData) {
                 const p = playersData[id];
-                let bStr = "未投票";
+                let bStr = `<span style="color:#94a3b8;">未投票</span>`;
                 if(p.currentBet) {
-                    bStr = `<span style="font-size: 20px; color: var(--primary); font-weight: bold;">【${POOL_NAMES[p.currentBet.type]}】</span> <span style="font-size: 24px; font-weight: 900; letter-spacing: 1px;">${p.currentBet.boats.join(' － ')}</span>`;
+                    bStr = `<span style="color:var(--primary); font-weight:bold;">【${POOL_NAMES[p.currentBet.type]}】</span> <span style="font-weight:900;">${p.currentBet.boats.join('-')}</span>`;
                 }
                 bCont.innerHTML += `
-                    <div id="race-bet-card-${id}" style="background:#fff; border:2px solid #cbd5e1; padding:10px; border-radius:8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                        <strong style="font-size:16px; color:#475569; display:block; margin-bottom:2px;">${p.name}</strong>
+                    <div id="race-bet-card-${id}" class="race-bet-card">
+                        <strong>${p.name}</strong>
                         <div>${bStr}</div>
                     </div>
                 `;
@@ -1017,7 +970,6 @@
 
         function initBoatsGraphics() {
             boatsState = [];
-            
             let rushTargetRank = 0; 
             if (currentPlayIndex > 0) { 
                 let randType = Math.random();
@@ -1030,15 +982,11 @@
                 let boatNum = i + 1;
                 let finalRank = targetOrders.indexOf(boatNum) + 1;
 
-                // タイムスケジュールの設定 (1位:15秒, 2位:18秒, 3位:21秒, 4~6位:25秒)
                 let targetGoalTime = 25; 
                 if (finalRank === 1) targetGoalTime = 15;
                 else if (finalRank === 2) targetGoalTime = 18;
                 else if (finalRank === 3) targetGoalTime = 21;
-                else {
-                    // 4~6位を21.5〜25秒の間に完全分配
-                    targetGoalTime = 21.5 + (finalRank - 4) * 1.75; 
-                }
+                else targetGoalTime = 21.5 + (finalRank - 4) * 1.75; 
 
                 let isCloserBoat = false;
                 if ((finalRank === 2 && rushTargetRank === 2) || 
@@ -1048,19 +996,13 @@
                 }
 
                 boatsState.push({
-                    id: i,
-                    num: boatNum,
-                    x: 30, 
-                    y: 25 + (i * 38),
-                    finalRank: finalRank,
-                    targetGoalTime: targetGoalTime,
-                    goalTime: null,
+                    id: i, num: boatNum, x: 30, y: 25 + (i * 38),
+                    finalRank, targetGoalTime, goalTime: null,
                     color: ['#fff','#333','#ef4444','#3b82f6','#eab308','#22c55e'][i],
                     textColor: ['#000','#fff','#fff','#fff','#fff','#fff'][i],
-                    wobbleSeed: Math.random() * 100, // 揺らぎパターン多様化
-                    wobbleScale: Math.random() * 20 + 60, // デッドヒート感を高めるために揺らぎ幅を拡大
-                    isCloser: isCloserBoat, 
-                    lastX: 30
+                    wobbleSeed: Math.random() * 100,
+                    wobbleScale: Math.random() * 20 + 60,
+                    isCloser: isCloserBoat, lastX: 30
                 });
             }
             drawRaceCanvas();
@@ -1081,18 +1023,14 @@
 
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
             ctx.beginPath(); ctx.moveTo(60, 15); ctx.lineTo(60, 245); ctx.stroke(); 
-            
             ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 4;
             ctx.beginPath(); ctx.moveTo(740, 15); ctx.lineTo(740, 245); ctx.stroke(); 
 
             boatsState.forEach(b => {
                 if(racePhase === 'racing' && !b.goalTime) {
                     ctx.fillStyle = 'rgba(255,255,255,0.6)';
-                    for(let i=0; i<4; i++) {
-                        ctx.fillRect(b.x - 10 - Math.random()*15, b.y + 5 + Math.random()*8, 4, 4);
-                    }
+                    for(let i=0; i<4; i++) ctx.fillRect(b.x - 10 - Math.random()*15, b.y + 5 + Math.random()*8, 4, 4);
                 }
-
                 ctx.fillStyle = b.color;
                 ctx.beginPath();
                 ctx.moveTo(b.x, b.y);
@@ -1101,11 +1039,9 @@
                 ctx.closePath();
                 ctx.fill();
                 ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
-
                 ctx.fillStyle = b.textColor;
                 ctx.font = 'bold 11px sans-serif';
                 ctx.fillText(b.num, b.x + 4, b.y + 13);
-                
                 if(b.goalTime) {
                     ctx.fillStyle = '#ffcc00';
                     ctx.font = 'italic bold 12px sans-serif';
@@ -1122,30 +1058,29 @@
         }
 
         function raceAnimationLoop(now) {
-            // ① 何らかのエラーが起きても画面が固まらないよう全体を try/catch で保護
             try {
                 const elapsed = (now - raceStartTimestamp) / 1000;
                 const goalX = 740;
                 const startX = 60;
                 const totalDistance = goalX - startX;
-                const waitLineX = goalX - 6; // ゴール直前で団子になる待機ライン
+                const BOAT_TIP = 24;                     // 艇の先端までの長さ（描画と一致）
+                const finishBackX = goalX - BOAT_TIP;   // 先端が赤線に触れるときの艇の後端座標
+                const waitLineX = finishBackX - 6;      // ゴール手前で団子になる待機ライン
 
-                // ① 安全装置：35秒で強制終了（着順どおりに残り艇を確定）
+                // 安全装置：35秒で強制終了（着順どおりに残り艇を確定）
                 if (elapsed > 35) {
                     boatsState.filter(b => b.goalTime === null)
                         .sort((a, b) => a.finalRank - b.finalRank)
-                        .forEach(b => { b.x = goalX; b.goalTime = elapsed; finishedCount++; });
+                        .forEach(b => { b.x = finishBackX; b.goalTime = elapsed; finishedCount++; });
                 }
 
                 boatsState.forEach(b => {
                     if (b.goalTime !== null) return;
-
                     let progressRatio = elapsed / b.targetGoalTime;
                     if (progressRatio > 1.0) progressRatio = 1.0;
 
                     let basePos = 0;
                     if (b.isCloser) {
-                        // 追い込み艇演出：75%まで後方待機→残り25%でごぼう抜き
                         if (progressRatio < 0.75) {
                             basePos = totalDistance * Math.pow(progressRatio, 1.6) * 0.70;
                         } else {
@@ -1157,34 +1092,24 @@
                         basePos = totalDistance * Math.pow(progressRatio, 1.1);
                     }
 
-                    // デッドヒート用の揺らぎ（終盤に向けて滑らかに減衰）
                     let wobble = Math.sin(elapsed * 4.0 + b.wobbleSeed) * b.wobbleScale * (progressRatio * 1.3);
-                    if (progressRatio >= 0.95) {
-                        wobble *= Math.max(0, (1.0 - progressRatio) / 0.05);
-                    } else if (progressRatio <= 0.02) {
-                        wobble = 0;
-                    }
+                    if (progressRatio >= 0.95) wobble *= Math.max(0, (1.0 - progressRatio) / 0.05);
+                    else if (progressRatio <= 0.02) wobble = 0;
 
                     b.x = startX + basePos + wobble;
-
-                    // 後退禁止ガード
                     if (b.lastX && b.x < b.lastX) b.x = b.lastX + 0.2;
 
-                    // 【③ 着順保証】自分より上位（finalRankが小さい）の艇が
-                    // 全部ゴールするまでは、ゴール手前で待機させて先ゴールを禁止
                     let predecessorsPending = boatsState.some(o => o.finalRank < b.finalRank && o.goalTime === null);
-
                     if (predecessorsPending) {
-                        if (b.x > waitLineX) b.x = waitLineX; // 追い越し・先ゴール禁止（団子状態を維持）
+                        if (b.x > waitLineX) b.x = waitLineX;
                     } else {
-                        // 自分の番：ゴール可能
-                        if (elapsed >= b.targetGoalTime || b.x >= goalX) {
-                            b.x = goalX;
+                        // 先端（b.x + BOAT_TIP）が赤線に到達したらゴール
+                        if (elapsed >= b.targetGoalTime || (b.x + BOAT_TIP) >= goalX) {
+                            b.x = finishBackX;   // 先端がちょうど赤線に触れる位置で停止
                             b.goalTime = elapsed;
                             finishedCount++;
                         }
                     }
-
                     b.lastX = b.x;
                 });
 
@@ -1197,11 +1122,10 @@
                     handleRaceFinishedUI();
                 }
             } catch (e) {
-                // ① エラーでも固まらせず、着順どおりに全艇ゴール扱いにして結果へ進める
                 console.error("レース処理中にエラー:", e);
                 boatsState.filter(b => b.goalTime === null)
                     .sort((a, b) => a.finalRank - b.finalRank)
-                    .forEach(b => { b.x = 740; b.goalTime = 99; });
+                    .forEach(b => { b.x = 740 - 24; b.goalTime = 99; });
                 racePhase = 'finished';
                 drawRaceCanvas();
                 handleRaceFinishedUI();
@@ -1211,13 +1135,10 @@
         function handleRaceFinishedUI() {
             document.getElementById('race-to-results-box').style.display = 'block';
             const winOrders = targetOrders; 
-
             for(let id in playersData) {
                 const p = playersData[id];
                 if(!p.currentBet) continue;
-
-                let isHit = checkBetIsHit(p.currentBet, winOrders);
-                if(isHit) {
+                if(checkBetIsHit(p.currentBet, winOrders)) {
                     const card = document.getElementById(`race-bet-card-${id}`);
                     if(card) card.classList.add('flash-winner');
                 }
@@ -1226,21 +1147,16 @@
 
 
         /** ========================================================
-         * 投票結果判定＆配当ポイント計算モジュール
+         * 判定＆配当計算
          * ======================================================== */
         function checkBetIsHit(bet, winOrders) {
             const bArr = bet.boats; 
             switch(bet.type) {
-                case 'tan':  
-                    return winOrders[0] === bArr[0];
-                case 'fuk2': 
-                    return bArr.includes(winOrders[0]) && bArr.includes(winOrders[1]);
-                case 'fuk3': 
-                    return bArr.includes(winOrders[0]) && bArr.includes(winOrders[1]) && bArr.includes(winOrders[2]);
-                case 'tan2': 
-                    return winOrders[0] === bArr[0] && winOrders[1] === bArr[1];
-                case 'tan3': 
-                    return winOrders[0] === bArr[0] && winOrders[1] === bArr[1] && winOrders[2] === bArr[2];
+                case 'tan':  return winOrders[0] === bArr[0];
+                case 'fuk2': return bArr.includes(winOrders[0]) && bArr.includes(winOrders[1]);
+                case 'fuk3': return bArr.includes(winOrders[0]) && bArr.includes(winOrders[1]) && bArr.includes(winOrders[2]);
+                case 'tan2': return winOrders[0] === bArr[0] && winOrders[1] === bArr[1];
+                case 'tan3': return winOrders[0] === bArr[0] && winOrders[1] === bArr[1] && winOrders[2] === bArr[2];
             }
             return false;
         }
@@ -1249,23 +1165,33 @@
             changeHostScreen('host-p7');
             const q = selectedQuestions[currentPlayIndex];
             const isQ0 = (currentPlayIndex === 0);
+            const raceName = q.title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
 
             if(isQ0) {
-                document.getElementById('host-p7-title').innerText = `${q.title || '0レース目(例題)'} 確定結果 / デモ終了`;
+                document.getElementById('host-p7-title').innerText = `${raceName} 確定結果 / デモ終了`;
             } else {
-                let pureRaceCount = selectedQuestions.length - 1;
-                document.getElementById('host-p7-title').innerText = `${q.title || `第${currentPlayIndex}レース`} 確定結果 / 全 ${pureRaceCount} レース`;
+                document.getElementById('host-p7-title').innerText = `${raceName} 確定結果 / ${raceProgressLabel()}`;
             }
 
             const winOrders = targetOrders;
-            document.getElementById('text-final-orders').innerText = winOrders.slice(0,3).join(' - ');
 
-            // 補足情報：テキスト＋画像を、指定された表示順で描画
+            // 確定順位（1〜3着）を、艇番＋選択肢テキスト付きで表示
+            const ordersHtml = winOrders.slice(0,3).map((num, i) => {
+                const ch = q.choices[num-1] || {};
+                const label = ch.text ? escapeHtml(ch.text) : '';
+                return `<div style="margin:4px 0; white-space:nowrap;">
+                            <b style="font-size:22px; color:#ef4444;">${i+1}着 ${num}番</b>
+                            ${label ? `<span style="font-size:15px; color:#111; margin-left:4px;">${label}</span>` : ''}
+                        </div>`;
+            }).join('');
+            document.getElementById('text-final-orders').innerHTML = ordersHtml;
+
+            // 補足情報：テキスト＋画像を指定順で描画（画像はタップで拡大）
             const suppBox = document.getElementById('text-supplementary-info');
             const suppOrder = q.suppOrder || ['text', 'image'];
             const suppParts = suppOrder.map(t => {
                 if (t === 'text') return q.supp ? `<div>${escapeHtml(q.supp).replace(/\n/g, '<br>')}</div>` : '';
-                if (t === 'image') return q.suppImg ? `<img src="${q.suppImg}" style="max-height:150px; display:block; margin:6px auto;">` : '';
+                if (t === 'image') return q.suppImg ? `<img src="${q.suppImg}" onclick="openImgPopup(this.src)" style="max-height:150px; display:block; margin:6px auto; cursor:zoom-in;">` : '';
                 return '';
             }).filter(Boolean);
             suppBox.innerHTML = suppParts.length ? suppParts.join('') : "特記事項なし";
@@ -1273,14 +1199,10 @@
             for(let id in playersData) {
                 const p = playersData[id];
                 p.lastRoundEarned = 0; 
-
                 if(p.currentBet) {
                     let isHit = checkBetIsHit(p.currentBet, winOrders);
-                    
                     if(isQ0) {
-                        if(isHit) {
-                            p.lastRoundEarned = p.currentBet.pts * p.currentBet.odds;
-                        }
+                        if(isHit) p.lastRoundEarned = p.currentBet.pts * p.currentBet.odds;
                     } else {
                         p.points -= p.currentBet.pts;
                         if(isHit) {
@@ -1295,14 +1217,12 @@
                 }
             }
 
-            saveGameState();    // ② 得点確定後に保存（ここが一番重要）
-            sendPointsUpdate(); // ①② 参加者へ最新残高を配信
-
+            saveGameState();
+            sendPointsUpdate();
             renderRoundRankingUI();
 
             const actionContainer = document.getElementById('next-action-container');
             actionContainer.innerHTML = "";
-            
             if (currentPlayIndex + 1 < selectedQuestions.length) {
                 const nextBtn = document.createElement('button');
                 if(currentPlayIndex === 0) {
@@ -1320,7 +1240,7 @@
                             playersData[id].lastRoundEarned = 0;
                         }
                         saveGameState();
-                        sendPointsUpdate(); // リセット後の100ptを配信
+                        sendPointsUpdate();
                     }
                     setupQuestion(currentPlayIndex + 1);
                 };
@@ -1340,39 +1260,35 @@
             container.innerHTML = "";
 
             let sortedPlayers = Object.values(playersData).sort((a,b) => b.lastRoundEarned - a.lastRoundEarned);
-            let currentRank = 1;
-            let rankCounter = 1;
-            let prevEarned = null;
-
+            let currentRank = 1, rankCounter = 1, prevEarned = null;
             sortedPlayers.forEach(p => {
-                if (prevEarned === p.lastRoundEarned) {
-                    p.tempRank = currentRank;
-                } else {
-                    p.tempRank = rankCounter;
-                    currentRank = rankCounter;
-                }
+                if (prevEarned === p.lastRoundEarned) p.tempRank = currentRank;
+                else { p.tempRank = rankCounter; currentRank = rankCounter; }
                 rankCounter++;
                 prevEarned = p.lastRoundEarned;
             });
 
-            [1, 2, 3].forEach(rNum => {
-                const rPlayers = sortedPlayers.filter(p => p.tempRank === rNum);
-                if(rPlayers.length > 0) {
-                    const block = document.createElement('div');
-                    block.className = 'hidden-result';
-                    block.innerText = `👑 本レース獲得額 第 ${rNum}位のプレイヤーを表示`;
-                    block.onclick = () => {
-                        let html = `<div style="background:#fff; border:2px solid var(--accent); padding:10px; border-radius:6px;"><h3>👑 本レース獲得額 第 ${rNum}位</h3>`;
+            const top3 = sortedPlayers.filter(p => p.tempRank <= 3);
+            if(top3.length > 0) {
+                const block = document.createElement('div');
+                block.className = 'hidden-result';
+                block.innerText = `👑 本レース獲得額 第1位〜第3位をまとめて表示`;
+                block.onclick = () => {
+                    let html = `<div style="background:#fff; border:2px solid var(--accent); padding:12px; border-radius:6px;">`;
+                    [1,2,3].forEach(rNum => {
+                        const rPlayers = sortedPlayers.filter(p => p.tempRank === rNum);
+                        if(rPlayers.length === 0) return;
+                        html += `<h3 style="margin:8px 0 4px; text-align:left; border-bottom:2px solid var(--accent);">第 ${rNum} 位</h3>`;
                         rPlayers.forEach(rp => {
-                            html += `<p style="font-size:18px; margin:5px 0;"><strong>${rp.name}</strong> さん : <span style="color:#22c55e; font-weight:bold;">+ ${rp.lastRoundEarned} pt</span></p>`;
+                            html += `<p style="font-size:18px; margin:3px 0;"><strong>${rp.name}</strong> さん : <span style="color:#22c55e; font-weight:bold;">+ ${rp.lastRoundEarned} pt</span></p>`;
                         });
-                        html += `</div>`;
-                        block.innerHTML = html;
-                        block.onclick = null;
-                    };
-                    container.appendChild(block);
-                }
-            });
+                    });
+                    html += `</div>`;
+                    block.innerHTML = html;
+                    block.onclick = null;
+                };
+                container.appendChild(block);
+            }
 
             const others = sortedPlayers.filter(p => p.tempRank >= 4);
             if(others.length > 0) {
@@ -1393,16 +1309,13 @@
         }
 
         function showFinalResult() {
-            clearGameState(); // ② ゲーム終了＝中断データを破棄（次回起動は自動で新規）
+            clearGameState();
             changeHostScreen('host-final');
             const container = document.getElementById('final-ranking-container');
             container.innerHTML = "";
 
             let sortedPlayers = Object.values(playersData).sort((a,b) => b.points - a.points);
-            let currentRank = 1;
-            let rankCounter = 1;
-            let prevPoints = null;
-
+            let currentRank = 1, rankCounter = 1, prevPoints = null;
             sortedPlayers.forEach(p => {
                 if (prevPoints === p.points) p.finalRank = currentRank;
                 else { p.finalRank = rankCounter; currentRank = rankCounter; }
@@ -1413,12 +1326,7 @@
             sortedPlayers.forEach(p => {
                 const block = document.createElement('div');
                 block.className = 'hidden-result';
-                if(p.finalRank <= 3) {
-                    block.innerText = `🏆 総合第 ${p.finalRank}位 を発表`;
-                } else {
-                    block.innerText = `総合第 ${p.finalRank}位 を発表`;
-                }
-                
+                block.innerText = p.finalRank <= 3 ? `🏆 総合第 ${p.finalRank}位 を発表` : `総合第 ${p.finalRank}位 を発表`;
                 block.onclick = () => {
                     block.innerHTML = `
                         <div style="background:#fff; padding:12px; border-radius:6px; border:3px solid ${p.finalRank===1?'#eab308':'#cbd5e1'}">
@@ -1437,7 +1345,6 @@
         function showTransitionGraph() {
             changeHostScreen('host-graph');
             const ctx = document.getElementById('history-chart').getContext('2d');
-            
             if(chartInstance) chartInstance.destroy();
 
             let labels = ['初期ポイント'];
@@ -1447,37 +1354,30 @@
             let datasets = [];
             const colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#14b8a6', '#f97316'];
             let cIdx = 0;
-
             for(let id in playersData) {
                 const p = playersData[id];
                 datasets.push({
-                    label: p.name,
-                    data: p.history,
+                    label: p.name, data: p.history,
                     borderColor: colors[cIdx % colors.length],
                     backgroundColor: colors[cIdx % colors.length],
-                    borderWidth: 3,
-                    fill: false,
-                    tension: 0.1
+                    borderWidth: 3, fill: false, tension: 0.1
                 });
                 cIdx++;
             }
 
             chartInstance = new Chart(ctx, {
                 type: 'line',
-                data: { labels: labels, datasets: datasets },
+                data: { labels, datasets },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: { beginAtZero: false, title: { display: true, text: '総ポイント' } }
-                    }
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: false, title: { display: true, text: '総ポイント' } } }
                 }
             });
         }
 
 
         /** ========================================================
-         * 参加者側クライアントUI/インタラクション処理
+         * 参加者側クライアント
          * ======================================================== */
         let myPoints = 100; 
         let selectedPool = null;
@@ -1496,18 +1396,14 @@
         function joinGame() {
             const name = document.getElementById('player-name-input').value;
             if(!name.trim()) return alert("名前を正確に入力してください。");
-            
             if ('wakeLock' in navigator) {
-                try {
-                    navigator.wakeLock.request('screen').then(lock => { wakeLock = lock; });
-                } catch (err) { console.log("WakeLock error", err); }
+                try { navigator.wakeLock.request('screen').then(lock => { wakeLock = lock; }); }
+                catch (err) { console.log("WakeLock error", err); }
             }
-
             sessionStorage.setItem('boat_player_name', name.trim());
             document.getElementById('lbl-reconnecting').style.display = 'none';
 
             const conn = myConnection.connect(roomID);
-            
             conn.on('open', () => {
                 peer = conn; 
                 peer.send({ type: 'join', name: name });
@@ -1520,14 +1416,13 @@
                         myPoints = data.points;
                         isPlayerExampleMode = data.isExampleMode || false;
                         updatePointsLabelUI();
-                    } else if (data.type === 'points_update') {   // ①② 最新残高の受信
+                    } else if (data.type === 'points_update') {
                         myPoints = data.points;
                         if (!isPlayerExampleMode) updatePointsLabelUI();
                     } else if (data.type === 'request_bet') {
                         remainRacesForPlayer = data.remainRaces;
                         isLastRaceForPlayer = data.isLast;
                         isPlayerExampleMode = data.isExampleMode || false;
-                        
                         document.getElementById('lbl-remain-races').innerText = isPlayerExampleMode ? "練習(0R)" : (remainRacesForPlayer + " レース");
                         resetBettingForm();
                         showPage('player-betting');
@@ -1565,12 +1460,8 @@
             if(isPlayerExampleMode) {
                 maxBet = 10; 
             } else {
-                if(isLastRaceForPlayer) {
-                    maxBet = myPoints;
-                } else {
-                    // 1pt温存仕様：将来のレース用に最低1ptずつ残す
-                    maxBet = myPoints - (remainRacesForPlayer - 1);
-                }
+                if(isLastRaceForPlayer) maxBet = myPoints;
+                else maxBet = myPoints - (remainRacesForPlayer - 1); // 1pt温存仕様
             }
             if(maxBet < 1) maxBet = 1;
 
@@ -1580,18 +1471,16 @@
             numInput.max = maxBet; numInput.value = 1;
 
             updatePointsLabelUI();
-            syncBetPoints('range');
+            calculateSimulatedPoints();
         }
 
         function selectPoolType(type, odds) {
             selectedPool = type; selectedOdds = odds; pickedBoats = [];
-            ['tan','fuk2','fuk3','tan2','tan3'].forEach(t => {
-                document.getElementById(`btn-pool-${t}`).classList.remove('selected');
-            });
+            ['tan','fuk2','fuk3','tan2','tan3'].forEach(t => document.getElementById(`btn-pool-${t}`).classList.remove('selected'));
             document.getElementById(`btn-pool-${type}`).classList.add('selected');
 
             if(type === 'tan') { requiredBoatCount = 1; document.getElementById('player-target-instruction').innerText = "1着になる艇を1つ選んでください。"; }
-            else if(type === 'fuk2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "順共同で2位以内に入る艇を2つ選んでください。"; }
+            else if(type === 'fuk2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "順不同で2位以内に入る艇を2つ選んでください。"; }
             else if(type === 'fuk3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "順不同で3位以内に入る艇を3つ選んでください。"; }
             else if(type === 'tan2') { requiredBoatCount = 2; document.getElementById('player-target-instruction').innerText = "1着→2着の順に2つ選んでください。"; }
             else if(type === 'tan3') { requiredBoatCount = 3; document.getElementById('player-target-instruction').innerText = "1着→2着→3着の順に3つ選んでください。"; }
@@ -1611,9 +1500,7 @@
                     if(requiredBoatCount === 1) {
                         const old = pickedBoats.shift();
                         document.getElementById(`btn-pick-${old}`).classList.remove('selected');
-                    } else {
-                        alert(`この賭け方で選択できるのは ${requiredBoatCount} 艇までです。`); return;
-                    }
+                    } else { alert(`この賭け方で選択できるのは ${requiredBoatCount} 艇までです。`); return; }
                 }
                 pickedBoats.push(num);
                 document.getElementById(`btn-pick-${num}`).classList.add('selected');
@@ -1631,17 +1518,36 @@
             }
         }
 
+        // スライダー/数値入力の同期（入力中は強制的に1へ戻さない）
         function syncBetPoints(trigger) {
             const rangeInput = document.getElementById('range-bet-points');
             const numInput = document.getElementById('num-bet-points');
-            let val = 1;
-            if(trigger === 'range') { val = parseInt(rangeInput.value); numInput.value = val; } 
-            else {
-                val = parseInt(numInput.value) || 1;
-                let maxLimit = parseInt(numInput.max);
-                if(val > maxLimit) val = maxLimit; if(val < 1) val = 1;
-                numInput.value = val; rangeInput.value = val;
+            if(trigger === 'range') {
+                let val = parseInt(rangeInput.value) || 1;
+                numInput.value = val;
+            } else {
+                let raw = numInput.value;
+                if(raw !== '') {
+                    let val = parseInt(raw);
+                    if(!isNaN(val)) {
+                        let maxLimit = parseInt(numInput.max);
+                        if(val > maxLimit) { val = maxLimit; numInput.value = val; }
+                        rangeInput.value = (val < 1 ? 1 : val);
+                    }
+                }
             }
+            calculateSimulatedPoints();
+        }
+
+        function clampBetPoints() {
+            const numInput = document.getElementById('num-bet-points');
+            const rangeInput = document.getElementById('range-bet-points');
+            let val = parseInt(numInput.value);
+            let maxLimit = parseInt(numInput.max);
+            if(isNaN(val) || val < 1) val = 1;
+            if(val > maxLimit) val = maxLimit;
+            numInput.value = val;
+            rangeInput.value = val;
             calculateSimulatedPoints();
         }
 
@@ -1654,6 +1560,7 @@
         function lockAndConfirmBet() {
             if(!selectedPool) return alert("賭け方の種類が選択されていません。");
             if(pickedBoats.length !== requiredBoatCount) return alert(`対象の艇を ${requiredBoatCount} つ選択してください。`);
+            clampBetPoints();
             const betPts = parseInt(document.getElementById('num-bet-points').value) || 0;
             let maxLimit = parseInt(document.getElementById('num-bet-points').max);
             
@@ -1665,8 +1572,6 @@
             if(!confirm(`${prefixConfirm}賭け方: ${POOL_NAMES[selectedPool]}\n選択艇: ${pickedBoats.join(', ')}\n賭けポイント: ${betPts} pt\n\nこのオッズで確定してホストへ送信しますか？`)) return;
 
             peer.send({ type: 'submit_bet', bet: { type: selectedPool, boats: pickedBoats, pts: betPts, odds: selectedOdds } });
-            
-            // ※残高はホストが管理し、レース後の points_update で正しく更新されます（ローカルでの仮増減は廃止）
             
             document.getElementById('player-wait-bet-info').style.display = "block";
             document.getElementById('player-wait-bet-info').innerHTML = `投票完了: ${POOL_NAMES[selectedPool]} [${pickedBoats.join('-')}] ${betPts}pt ${isPlayerExampleMode ? '(例題用10pt資金より)':''}`;
