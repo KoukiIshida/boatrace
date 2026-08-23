@@ -963,7 +963,11 @@
             racePhase = 'ready';
             finishedCount = 0;
             const q = selectedQuestions[currentPlayIndex];
-            targetOrders = q.ans.split(',').map(v => parseInt(v.trim())); 
+
+            // 正解データを安全に解釈（壊れていても6艇ぶんを必ず用意）
+            let ansRaw = (q.ans || '').split(',').map(v => parseInt(v.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 6);
+            let ansUniq = [...new Set(ansRaw)];
+            targetOrders = (ansUniq.length === 6) ? ansUniq : [1, 2, 3, 4, 5, 6];
 
             initBoatsGraphics();
         }
@@ -1051,6 +1055,10 @@
         }
 
         function startRaceAnimation() {
+            // 念のため：艇が未生成なら作り直してから開始
+            if (!boatsState || boatsState.length === 0) {
+                initBoatsGraphics();
+            }
             document.getElementById('btn-start-race').style.display = 'none';
             racePhase = 'racing';
             raceStartTimestamp = performance.now();
