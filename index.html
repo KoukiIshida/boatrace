@@ -933,7 +933,8 @@
         function goToRaceScreen() {
             changeHostScreen('host-p6');
             const isQ0 = (currentPlayIndex === 0);
-            const raceName = selectedQuestions[currentPlayIndex].title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
+            const qForName = selectedQuestions[currentPlayIndex] || {};
+            const raceName = qForName.title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
 
             if(isQ0) {
                 document.getElementById('host-p6-title').innerText = `${raceName} / 体験デモ走行`;
@@ -962,7 +963,7 @@
             
             racePhase = 'ready';
             finishedCount = 0;
-            const q = selectedQuestions[currentPlayIndex];
+            const q = selectedQuestions[currentPlayIndex] || {};
 
             // 正解データを安全に解釈（壊れていても6艇ぶんを必ず用意）
             let ansRaw = (q.ans || '').split(',').map(v => parseInt(v.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 6);
@@ -1055,10 +1056,16 @@
         }
 
         function startRaceAnimation() {
-            // 念のため：艇が未生成なら作り直してから開始
-            if (!boatsState || boatsState.length === 0) {
-                initBoatsGraphics();
+            // 保険：正解データが無ければ現在の問題から用意
+            if (!Array.isArray(targetOrders) || targetOrders.length !== 6) {
+                const q = selectedQuestions[currentPlayIndex] || {};
+                let raw = ((q.ans) || '1,2,3,4,5,6').split(',').map(v => parseInt(v.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 6);
+                let uniq = [...new Set(raw)];
+                targetOrders = (uniq.length === 6) ? uniq : [1, 2, 3, 4, 5, 6];
             }
+            // 前レースの残り状態を消して必ず艇を初期位置から作り直す（一瞬で終了する不具合を防止）
+            initBoatsGraphics();
+
             document.getElementById('btn-start-race').style.display = 'none';
             racePhase = 'racing';
             raceStartTimestamp = performance.now();
@@ -1183,7 +1190,7 @@
 
         function goToResultPresentation() {
             changeHostScreen('host-p7');
-            const q = selectedQuestions[currentPlayIndex];
+            const q = selectedQuestions[currentPlayIndex] || {};
             const isQ0 = (currentPlayIndex === 0);
             const raceName = q.title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
 
@@ -1197,7 +1204,7 @@
 
             // 確定順位（1〜3着）を、艇番＋選択肢テキストで表示（「番」は付けない）
             const ordersHtml = winOrders.slice(0,3).map((num, i) => {
-                const ch = q.choices[num-1] || {};
+                const ch = (q.choices && q.choices[num-1]) || {};
                 const label = ch.text ? escapeHtml(ch.text) : '';
                 return `<div style="margin:4px 0; white-space:nowrap;">
                             <b style="font-size:22px; color:#ef4444;">${i+1}着 ${num}</b>
