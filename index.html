@@ -1063,18 +1063,20 @@
                 let uniq = [...new Set(raw)];
                 targetOrders = (uniq.length === 6) ? uniq : [1, 2, 3, 4, 5, 6];
             }
-            // 前レースの残り状態を消して必ず艇を初期位置から作り直す（一瞬で終了する不具合を防止）
+            // 前レースの残り状態を消して必ず艇を初期位置から作り直す
             initBoatsGraphics();
 
             document.getElementById('btn-start-race').style.display = 'none';
             racePhase = 'racing';
-            raceStartTimestamp = performance.now();
+            raceStartTimestamp = null;   // ★最初のフレームの時刻を基準にする（負のelapsed=NaN即終了を防止）
             requestAnimationFrame(raceAnimationLoop);
         }
 
         function raceAnimationLoop(now) {
             try {
-                const elapsed = (now - raceStartTimestamp) / 1000;
+                if (raceStartTimestamp === null) raceStartTimestamp = now; // ★基準時刻を最初のフレームで取得
+                let elapsed = (now - raceStartTimestamp) / 1000;
+                if (elapsed < 0) elapsed = 0;                              // ★負の経過時間を禁止（NaN防止）
                 const goalX = 740;
                 const startX = 60;
                 const totalDistance = goalX - startX;
@@ -1104,6 +1106,7 @@
                     // --- まだゴールしていない艇（進行＋デッドヒート＋待機ライン） ---
                     let progressRatio = elapsed / b.targetGoalTime;
                     if (progressRatio > 1.0) progressRatio = 1.0;
+                    if (progressRatio < 0) progressRatio = 0; // ★保険（NaN防止）
 
                     let basePos = 0;
                     if (b.isCloser) {
