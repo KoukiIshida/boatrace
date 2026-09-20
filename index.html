@@ -45,6 +45,10 @@
         .hidden-result { cursor: pointer; background: #edf2f7; padding: 12px; border: 2px dashed #cbd5e1; margin: 8px 0; text-align: center; font-weight: bold; border-radius: 6px; font-size: 18px; }
         #qr-container { display: flex; justify-content: center; margin: 15px 0; }
 
+        /* レース名タイトル（名前を大きく／「/」以降を小さく） */
+        .race-title-name { font-size: 1.15em; }
+        .race-title-suffix { font-size: 0.62em; color: #64748b; font-weight: normal; }
+
         /* ボートレース風デザイン */
         .boat-choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0; }
         @media(max-width:600px){ .boat-choices { grid-template-columns: repeat(2, 1fr); } }
@@ -106,6 +110,16 @@
         /* 画像ポップアップ */
         #img-popup-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 9999; justify-content: center; align-items: center; cursor: zoom-out; }
         #img-popup-content { max-width: 92%; max-height: 92%; border: 4px solid #fff; border-radius: 8px; object-fit: contain; }
+
+        /* 保存中オーバーレイ */
+        #saving-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.75); z-index: 10000; justify-content: center; align-items: center; }
+        .saving-box { background: #fff; border-radius: 12px; padding: 28px 40px; text-align: center; min-width: 280px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+        .saving-spinner { width: 46px; height: 46px; border: 5px solid #cbd5e1; border-top-color: var(--primary); border-radius: 50%; margin: 0 auto 14px; animation: spin 0.9s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #saving-msg { font-weight: bold; color: #475569; }
+        #saving-pct { font-size: 30px; font-weight: 900; color: var(--primary); margin: 6px 0; }
+        .saving-bar-wrap { background: #e2e8f0; border-radius: 6px; height: 12px; overflow: hidden; margin-top: 8px; }
+        #saving-bar { height: 100%; width: 0%; background: var(--primary); transition: width 0.2s; }
     </style>
 </head>
 <body>
@@ -166,7 +180,7 @@
 
     <div id="host-p4" class="page">
         <h1 id="host-q-title">第 1 レース / 全 0 レース</h1>
-        <h3 id="host-q-text-view" style="border:none; background:#f8fafc; padding:15px; font-size:26px; font-weight:bold; color:#1e3a8a; text-align:left; line-height:1.5; box-shadow:inset 0 2px 4px rgba(0,0,0,0.05); border-radius:8px;"></h3>
+        <h3 id="host-q-text-view" style="border:none; background:#f8fafc; padding:15px; font-size:21px; font-weight:bold; color:#1e3a8a; text-align:left; line-height:1.5; box-shadow:inset 0 2px 4px rgba(0,0,0,0.05); border-radius:8px;"></h3>
         
         <div class="boat-choices" id="host-boat-container"></div>
         
@@ -176,16 +190,7 @@
         
         <div style="text-align:center; margin-top:20px;">
             <button onclick="sendBetPrompt()" style="background:#eab308; color:#000;">参加者の画面を投票画面にする</button>
-            <button id="btn-show-bets" onclick="showAllBets()" style="font-size:18px;">みなさんの結果（予想一覧）を表示</button>
-        </div>
-    </div>
-
-    <div id="host-p5" class="page">
-        <h1 id="host-p5-title">みなさんの予想（正解時高得点順）</h1>
-        <div id="all-bets-ranking-container"></div>
-        
-        <div style="text-align:center; margin-top:25px;">
-            <button onclick="goToRaceScreen()" style="background:#22c55e; font-size:20px; padding:12px 35px;">出走準備へ</button>
+            <button onclick="goToRaceScreen()" style="background:#22c55e; font-size:18px;">出走準備へ</button>
         </div>
     </div>
 
@@ -305,6 +310,16 @@
         <img id="img-popup-content" src="" alt="">
     </div>
 
+    <!-- 保存中オーバーレイ -->
+    <div id="saving-overlay">
+        <div class="saving-box">
+            <div class="saving-spinner"></div>
+            <div id="saving-msg">保存中...</div>
+            <div id="saving-pct">0%</div>
+            <div class="saving-bar-wrap"><div id="saving-bar"></div></div>
+        </div>
+    </div>
+
     <script>
         /** ========================================================
          * IndexedDB 大容量保存処理
@@ -349,6 +364,40 @@
                 reader.onload = () => resolve(reader.result);
                 reader.onerror = error => reject(error);
                 reader.readAsDataURL(file);
+            });
+        }
+
+        /* 画像を縮小＋JPEG圧縮して保存を軽くする */
+        function _scaleToJpeg(img, maxDim, quality) {
+            let w = img.width, h = img.height;
+            if (w >= h) { if (w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; } }
+            else { if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; } }
+            const c = document.createElement('canvas'); c.width = w; c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0, w, h);
+            return c.toDataURL('image/jpeg', quality);
+        }
+        function compressFile(file, maxDim, quality) {
+            return new Promise((resolve) => {
+                if (!file) return resolve(null);
+                const r = new FileReader();
+                r.onload = () => {
+                    const img = new Image();
+                    img.onload = () => { try { resolve(_scaleToJpeg(img, maxDim, quality)); } catch (e) { resolve(r.result); } };
+                    img.onerror = () => resolve(r.result);
+                    img.src = r.result;
+                };
+                r.onerror = () => resolve(null);
+                r.readAsDataURL(file);
+            });
+        }
+        function compressExisting(dataURL, maxDim, quality) {
+            return new Promise((resolve) => {
+                if (!dataURL || typeof dataURL !== 'string' || !dataURL.startsWith('data:')) return resolve(dataURL);
+                if (dataURL.length < 150000) return resolve(dataURL);
+                const img = new Image();
+                img.onload = () => { try { resolve(_scaleToJpeg(img, maxDim, quality)); } catch (e) { resolve(dataURL); } };
+                img.onerror = () => resolve(dataURL);
+                img.src = dataURL;
             });
         }
 
@@ -418,11 +467,16 @@
             document.getElementById('img-popup-content').src = '';
         }
 
+        function escapeHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
         // レース進行の表記
         function raceProgressLabel() {
             let pureRaceCount = selectedQuestions.length - 1;
             if (currentPlayIndex >= pureRaceCount) return "最終レース";
             return `第 ${currentPlayIndex} レース（全 ${pureRaceCount} レース）`;
+        }
+        function raceTitleHtml(name, suffix) {
+            return `<span class="race-title-name">${escapeHtml(name)}</span> <span class="race-title-suffix">/ ${escapeHtml(suffix)}</span>`;
         }
 
         window.onload = async () => {
@@ -507,8 +561,6 @@
             window.scrollTo(0,0);
         }
 
-        function escapeHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
         /** ========================================================
          * 管理画面 処理群
          * ======================================================== */
@@ -589,7 +641,6 @@
                         <button type="button" onclick="removeQuestion(${idx})" style="background:#ef4444; padding:4px 10px; font-size:12px;">この枠を削除</button>
                     </div>
                 `;
-                // 問題ブロックのドラッグ並べ替え（ドロップ先）
                 div.addEventListener('dragover', qBlockDragOver);
                 div.addEventListener('dragleave', qBlockDragLeave);
                 div.addEventListener('drop', (e) => qBlockDrop(e, idx));
@@ -598,12 +649,12 @@
             updateSelectedListSection3();
         }
 
-        /* ★問題ブロックのドラッグ並べ替え */
+        /* 問題ブロックのドラッグ並べ替え */
         let qDragIdx = null;
         function qBlockDragStart(e, idx) {
             qDragIdx = idx;
             e.dataTransfer.effectAllowed = 'move';
-            captureCurrentFormInputs(); // 編集中の入力を保持
+            captureCurrentFormInputs();
             const block = document.getElementById(`q-block-element-${idx}`);
             if (block) block.classList.add('dragging');
         }
@@ -745,12 +796,10 @@
         }
 
         async function saveAllData() {
-            appData.ruleText = document.getElementById('rule-editor').innerHTML;
-            const ruleImgFile = document.getElementById('rule-image-upload').files[0];
-            if (ruleImgFile) appData.ruleImg = await fileToBase64(ruleImgFile);
-
             captureCurrentFormInputs();
+            appData.ruleText = document.getElementById('rule-editor').innerHTML;
 
+            // 正解順位チェック
             for (let idx = 0; idx < appData.questions.length; idx++) {
                 const q = appData.questions[idx];
                 if (!q.include) continue;
@@ -764,25 +813,70 @@
                 }
             }
 
-            for (let idx = 0; idx < appData.questions.length; idx++) {
-                const q = appData.questions[idx];
-                q.order = idx;
-                // 問題文の画像
-                const tf = document.getElementById(`q-textimg-${idx}`).files[0];
-                if(tf) q.textImg = await fileToBase64(tf);
-                // 選択肢の画像
-                for(let n=1; n<=6; n++) {
-                    const f = document.getElementById(`q-c-img-${idx}-${n}`).files[0];
-                    if(f) q.choices[n-1].img = await fileToBase64(f);
-                }
-                // 補足画像
-                const sf = document.getElementById(`q-supp-img-${idx}`).files[0];
-                if(sf) q.suppImg = await fileToBase64(sf);
-            }
+            // 保存中オーバーレイ表示＋進捗
+            const overlay = document.getElementById('saving-overlay');
+            const msgEl = document.getElementById('saving-msg');
+            const pctEl = document.getElementById('saving-pct');
+            const barEl = document.getElementById('saving-bar');
+            const total = 1 + appData.questions.length * 8; // ルール + (問題文+選択肢6+補足)×問題数
+            let done = 0;
+            const step = () => {
+                done++;
+                const pct = Math.min(100, Math.round(done / total * 100));
+                pctEl.innerText = pct + '%';
+                barEl.style.width = pct + '%';
+            };
+            msgEl.innerText = '画像を最適化しています...';
+            pctEl.innerText = '0%';
+            barEl.style.width = '0%';
+            overlay.style.display = 'flex';
+            // オーバーレイを確実に描画させてから処理開始
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-            await saveToDB('boatRaceMasterData', appData);
-            alert("設定データをローカルストレージへ保存しました。");
-            window.location.href = window.location.pathname; 
+            try {
+                // ルール画像
+                const ruleImgFile = document.getElementById('rule-image-upload').files[0];
+                if (ruleImgFile) appData.ruleImg = await compressFile(ruleImgFile, 1200, 0.8);
+                else appData.ruleImg = await compressExisting(appData.ruleImg, 1200, 0.8);
+                step();
+
+                for (let idx = 0; idx < appData.questions.length; idx++) {
+                    const q = appData.questions[idx];
+                    q.order = idx;
+
+                    const tf = document.getElementById(`q-textimg-${idx}`).files[0];
+                    if(tf) q.textImg = await compressFile(tf, 1000, 0.8);
+                    else q.textImg = await compressExisting(q.textImg, 1000, 0.8);
+                    step();
+
+                    for(let n=1; n<=6; n++) {
+                        const f = document.getElementById(`q-c-img-${idx}-${n}`).files[0];
+                        if(f) q.choices[n-1].img = await compressFile(f, 700, 0.8);
+                        else q.choices[n-1].img = await compressExisting(q.choices[n-1].img, 700, 0.8);
+                        step();
+                    }
+
+                    const sf = document.getElementById(`q-supp-img-${idx}`).files[0];
+                    if(sf) q.suppImg = await compressFile(sf, 1000, 0.8);
+                    else q.suppImg = await compressExisting(q.suppImg, 1000, 0.8);
+                    step();
+                }
+
+                msgEl.innerText = 'データを保存しています...';
+                pctEl.innerText = '100%';
+                barEl.style.width = '100%';
+                await new Promise(r => requestAnimationFrame(r));
+
+                await saveToDB('boatRaceMasterData', appData);
+
+                overlay.style.display = 'none';
+                alert("設定データを保存しました。");
+                window.location.href = window.location.pathname;
+            } catch (e) {
+                overlay.style.display = 'none';
+                console.error("保存エラー:", e);
+                alert("保存中にエラーが発生しました: " + (e && e.message));
+            }
         }
 
 
@@ -916,13 +1010,9 @@
 
             for (let id in playersData) playersData[id].currentBet = null;
 
-            if(isQ0) {
-                document.getElementById('host-q-title').innerText = `${raceName} / 本番直前体験`;
-            } else {
-                document.getElementById('host-q-title').innerText = `${raceName} / ${raceProgressLabel()}`;
-            }
+            const suffix = isQ0 ? '本番直前体験' : raceProgressLabel();
+            document.getElementById('host-q-title').innerHTML = raceTitleHtml(raceName, suffix);
 
-            // 問題文（テキスト＋画像）
             let qHtml = escapeHtml(q.text || '').replace(/\n/g, '<br>');
             if (q.textImg) qHtml += `<div><img src="${q.textImg}" onclick="openImgPopup(this.src)" style="max-height:220px; margin-top:10px; cursor:zoom-in;"></div>`;
             document.getElementById('host-q-text-view').innerHTML = qHtml;
@@ -959,33 +1049,6 @@
             broadcast('request_bet', { remainRaces, isLast, isExampleMode: isQ0 });
         }
 
-        function showAllBets() {
-            changeHostScreen('host-p5');
-            const container = document.getElementById('all-bets-ranking-container');
-            container.innerHTML = "";
-            let list = [];
-            for(let id in playersData) {
-                const p = playersData[id];
-                let betString = "未投票";
-                let potentialEarn = 0; 
-                if(p.currentBet) {
-                    const b = p.currentBet;
-                    potentialEarn = b.pts * b.odds;
-                    betString = `【${POOL_NAMES[b.type]}】 艇:[${b.boats.join(',')}]`;
-                }
-                list.push({ name: p.name, pEarn: potentialEarn, desc: betString });
-            }
-            list.sort((a,b) => b.pEarn - a.pEarn);
-            if(list.length === 0) { container.innerHTML = "<p style='text-align:center;'>参加者がいません。</p>"; return; }
-
-            let tHtml = `<table><tr><th>順位</th><th>参加者</th><th>賭け内容</th><th>的中時の獲得ポイント（単体）</th></tr>`;
-            list.forEach((item, index) => {
-                tHtml += `<tr><td>${index+1}</td><td><strong>${item.name}</strong></td><td>${item.desc}</td><td style="color:#22c55e; font-weight:bold;">+ ${item.pEarn} pt</td></tr>`;
-            });
-            tHtml += `</table>`;
-            container.innerHTML = tHtml;
-        }
-
 
         /** ========================================================
          * レースアニメーション
@@ -1003,13 +1066,9 @@
             const q = selectedQuestions[currentPlayIndex] || {};
             const raceName = q.title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
 
-            if(isQ0) {
-                document.getElementById('host-p6-title').innerText = `${raceName} / 体験デモ走行`;
-            } else {
-                document.getElementById('host-p6-title').innerText = `${raceName} / ${raceProgressLabel()}`;
-            }
+            const suffix = isQ0 ? '体験デモ走行' : raceProgressLabel();
+            document.getElementById('host-p6-title').innerHTML = raceTitleHtml(raceName, suffix);
 
-            // ★レース画面の上部に 1〜6 の選択肢一覧（テキストのみ）を表示
             const legend = document.getElementById('race-choices-legend');
             legend.innerHTML = "";
             for(let i=1; i<=6; i++) {
@@ -1039,7 +1098,6 @@
             racePhase = 'ready';
             finishedCount = 0;
 
-            // 正解データを安全に解釈（壊れていても6艇ぶんを必ず用意）
             let ansRaw = (q.ans || '').split(',').map(v => parseInt(v.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 6);
             let ansUniq = [...new Set(ansRaw)];
             targetOrders = (ansUniq.length === 6) ? ansUniq : [1, 2, 3, 4, 5, 6];
@@ -1130,19 +1188,17 @@
         }
 
         function startRaceAnimation() {
-            // 保険：正解データが無ければ現在の問題から用意
             if (!Array.isArray(targetOrders) || targetOrders.length !== 6) {
                 const q = selectedQuestions[currentPlayIndex] || {};
                 let raw = ((q.ans) || '1,2,3,4,5,6').split(',').map(v => parseInt(v.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 6);
                 let uniq = [...new Set(raw)];
                 targetOrders = (uniq.length === 6) ? uniq : [1, 2, 3, 4, 5, 6];
             }
-            // 前レースの残り状態を消して必ず艇を初期位置から作り直す
             initBoatsGraphics();
 
             document.getElementById('btn-start-race').style.display = 'none';
             racePhase = 'racing';
-            raceStartTimestamp = null;   // 最初のフレームの時刻を基準にする（負のelapsed=NaN即終了を防止）
+            raceStartTimestamp = null;
             requestAnimationFrame(raceAnimationLoop);
         }
 
@@ -1264,11 +1320,8 @@
             const isQ0 = (currentPlayIndex === 0);
             const raceName = q.title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
 
-            if(isQ0) {
-                document.getElementById('host-p7-title').innerText = `${raceName} 確定結果 / デモ終了`;
-            } else {
-                document.getElementById('host-p7-title').innerText = `${raceName} 確定結果 / ${raceProgressLabel()}`;
-            }
+            const suffix = isQ0 ? 'デモ終了' : raceProgressLabel();
+            document.getElementById('host-p7-title').innerHTML = raceTitleHtml(raceName + ' 確定結果', suffix);
 
             const winOrders = targetOrders;
 
@@ -1556,7 +1609,7 @@
                 maxBet = 10; 
             } else {
                 if(isLastRaceForPlayer) maxBet = myPoints;
-                else maxBet = myPoints - (remainRacesForPlayer - 1); // 1pt温存仕様
+                else maxBet = myPoints - (remainRacesForPlayer - 1);
             }
             if(maxBet < 1) maxBet = 1;
 
