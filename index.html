@@ -23,13 +23,17 @@
         .editor { border: 2px solid #cbd5e1; min-height: 80px; padding: 10px; border-radius: 6px; overflow-y: auto; margin-bottom: 12px; background: #fff;}
         
         .question-block { border: 2px solid #cbd5e1; margin-bottom: 15px; border-radius: 8px; background: #f8fafc; overflow: hidden; transition: transform 0.2s ease; }
+        .question-block.drag-over { outline: 3px dashed var(--primary); outline-offset: -3px; }
+        .question-block.dragging { opacity: 0.4; }
         .q-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #e2e8f0; font-weight: bold; gap: 10px; }
         .q-header-title { flex-grow: 1; cursor: pointer; }
         .q-header-ctrls { display: flex; align-items: center; gap: 15px; background: rgba(255,255,255,0.6); padding: 5px 10px; border-radius: 4px; border: 1px solid #cbd5e1; font-size: 14px; }
         .q-header-ctrls label { cursor: pointer; display: flex; align-items: center; gap: 4px; }
-        .q-order-btns { display: flex; gap: 2px; margin-right: 5px; }
+        .q-order-btns { display: flex; gap: 2px; margin-right: 5px; align-items:center; }
         .q-order-btns button { padding: 4px 8px; font-size: 12px; margin: 0; background: #475569; }
         .q-order-btns button:hover { background: #1e293b; }
+        .q-drag-handle { cursor: grab; background:#94a3b8; color:#fff; padding:6px 8px; border-radius:4px; font-size:14px; user-select:none; margin-right:4px; }
+        .q-drag-handle:active { cursor: grabbing; }
         .q-details { display: none; padding: 15px; border-top: 2px solid #cbd5e1; }
         .q-details.open { display: block; }
         
@@ -64,6 +68,11 @@
 
         /* レース用キャンバス */
         #race-canvas { width: 100%; height: 260px; background: #0284c7; border: 4px solid #0369a1; border-radius: 8px; box-sizing: border-box; display: block; }
+
+        /* レース画面 選択肢一覧 */
+        #race-choices-legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0 15px; }
+        @media(max-width:600px){ #race-choices-legend { grid-template-columns: repeat(2, 1fr); } }
+        .race-legend-item { display: flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-size: 13px; font-weight: bold; }
         
         /* ベッティング画面用 */
         .bet-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin: 10px 0; }
@@ -115,8 +124,8 @@
         <div id="rule-editor" class="editor" contenteditable="true">ここにルールを入力...</div>
         <label>ルール説明用画像: <input type="file" id="rule-image-upload" accept="image/*"></label>
         
-        <h3>2. 問題の登録と順番のスライド変更 (最上部が0レース目の例題枠になります)</h3>
-        <p style="font-size:13px; color:#64748b; margin:0 0 10px 0;">※【🔼 上へ】や【🔽 下へ】ボタンを押すと、枠の順番を上下に簡単に入れ替えることができます。</p>
+        <h3>2. 問題の登録と順番の変更 (最上部が0レース目の例題枠になります)</h3>
+        <p style="font-size:13px; color:#64748b; margin:0 0 10px 0;">※【⠿】ハンドルを<b>ドラッグ</b>して並べ替え、または【🔼上へ】【🔽下へ】ボタンでも入れ替えできます。</p>
         <button onclick="addQuestionBlock()">＋ 新しい問題を追加する</button>
         <div id="questions-container" style="margin-top:15px;"></div>
         
@@ -182,6 +191,7 @@
 
     <div id="host-p6" class="page">
         <h1 id="host-p6-title">🚤 PIT IN / レーススタート 🚤</h1>
+        <div id="race-choices-legend"></div>
         <canvas id="race-canvas" width="800" height="260"></canvas>
         
         <div style="text-align:center; margin:15px 0;">
@@ -435,7 +445,7 @@
                 isHost = true;
                 if (!appData.questions || appData.questions.length === 0) {
                     appData.questions = [];
-                    appData.questions.push({ title: '0レース目(例題)', text: '例題デモです。操作やタイム感をテストしましょう！', layout: 'text', choices: Array.from({length:6}, () => ({text:'', img:null})), ans: '1,2,3,4,5,6', supp: '例題のため得点は本番に引き継がれません。', suppImg: null, suppOrder: ['text','image'], include: true, done: false });
+                    appData.questions.push({ title: '0レース目(例題)', text: '例題デモです。操作やタイム感をテストしましょう！', textImg: null, layout: 'text', choices: Array.from({length:6}, () => ({text:'', img:null})), ans: '1,2,3,4,5,6', supp: '例題のため得点は本番に引き継がれません。', suppImg: null, suppOrder: ['text','image'], include: true, done: false });
                     for(let i=1; i<=3; i++) appData.questions.push(createEmptyQuestionObject());
                 }
                 renderAdminPage();
@@ -497,6 +507,8 @@
             window.scrollTo(0,0);
         }
 
+        function escapeHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
         /** ========================================================
          * 管理画面 処理群
          * ======================================================== */
@@ -513,6 +525,7 @@
                 div.innerHTML = `
                     <div class="q-header">
                         <div class="q-order-btns">
+                            <span class="q-drag-handle" draggable="true" ondragstart="qBlockDragStart(event, ${idx})" ondragend="qBlockDragEnd(event)" title="ドラッグで並べ替え">⠿</span>
                             <button type="button" onclick="moveBlockUpDown(${idx}, -1)">🔼 上へ</button>
                             <button type="button" onclick="moveBlockUpDown(${idx}, 1)">🔽 下へ</button>
                         </div>
@@ -528,7 +541,10 @@
                         <label>レース名/ジャンル: <input type="text" id="q-title-${idx}" value="${q.title || ''}" oninput="document.getElementById('q-head-title-${idx}').innerText = this.value || '未設定'" style="width:80%;"></label><br><br>
                         
                         <b>問題文（テキスト）</b>
-                        <textarea id="q-text-${idx}" style="width:100%; height:50px; margin-bottom:10px;">${q.text || ''}</textarea>
+                        <textarea id="q-text-${idx}" style="width:100%; height:50px; margin-bottom:6px;">${q.text || ''}</textarea>
+                        <label>問題文の画像（任意）: <input type="file" id="q-textimg-${idx}" accept="image/*"></label>
+                        ${q.textImg ? `<small style="color:green;">✓画像あり</small> <button type="button" onclick="removeTextImg(${idx})" style="background:#ef4444; padding:2px 8px; font-size:11px;">画像を削除</button>` : ''}
+                        <br><br>
                         
                         <b>6つの選択肢設定</b><br>
                         <label>表示パターン: 
@@ -573,16 +589,54 @@
                         <button type="button" onclick="removeQuestion(${idx})" style="background:#ef4444; padding:4px 10px; font-size:12px;">この枠を削除</button>
                     </div>
                 `;
+                // 問題ブロックのドラッグ並べ替え（ドロップ先）
+                div.addEventListener('dragover', qBlockDragOver);
+                div.addEventListener('dragleave', qBlockDragLeave);
+                div.addEventListener('drop', (e) => qBlockDrop(e, idx));
                 container.appendChild(div);
             });
             updateSelectedListSection3();
         }
 
-        let suppDragEl = null;
-        function suppDragStart(e) { suppDragEl = e.currentTarget; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
-        function suppDragOver(e) { e.preventDefault(); }
-        function suppDrop(e) {
+        /* ★問題ブロックのドラッグ並べ替え */
+        let qDragIdx = null;
+        function qBlockDragStart(e, idx) {
+            qDragIdx = idx;
+            e.dataTransfer.effectAllowed = 'move';
+            captureCurrentFormInputs(); // 編集中の入力を保持
+            const block = document.getElementById(`q-block-element-${idx}`);
+            if (block) block.classList.add('dragging');
+        }
+        function qBlockDragOver(e) {
+            if (qDragIdx === null) return;
             e.preventDefault();
+            e.currentTarget.classList.add('drag-over');
+        }
+        function qBlockDragLeave(e) {
+            e.currentTarget.classList.remove('drag-over');
+        }
+        function qBlockDrop(e, idx) {
+            if (qDragIdx === null) return;
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+            if (qDragIdx !== idx) {
+                const item = appData.questions.splice(qDragIdx, 1)[0];
+                appData.questions.splice(idx, 0, item);
+            }
+            qDragIdx = null;
+            renderAdminPage();
+        }
+        function qBlockDragEnd(e) {
+            qDragIdx = null;
+            document.querySelectorAll('.question-block').forEach(b => b.classList.remove('dragging','drag-over'));
+        }
+
+        /* 補足の表示順ドラッグ */
+        let suppDragEl = null;
+        function suppDragStart(e) { suppDragEl = e.currentTarget; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.stopPropagation(); }
+        function suppDragOver(e) { e.preventDefault(); e.stopPropagation(); }
+        function suppDrop(e) {
+            e.preventDefault(); e.stopPropagation();
             const target = e.currentTarget;
             const list = target.parentNode;
             if (suppDragEl && suppDragEl !== target) {
@@ -601,19 +655,24 @@
             renderAdminPage();
             toggleQDetails(idx);
         }
-
-        function escapeHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function removeTextImg(idx) {
+            captureCurrentFormInputs();
+            if (appData.questions[idx]) appData.questions[idx].textImg = null;
+            renderAdminPage();
+            toggleQDetails(idx);
+        }
 
         function createEmptyQuestionObject() {
             return {
-                title: '新しいレース', text: '予想してください。', layout: 'text',
+                title: '新しいレース', text: '予想してください。', textImg: null, layout: 'text',
                 choices: Array.from({length:6}, () => ({text:'', img:null})),
                 ans: '1,2,3,4,5,6', supp: '', suppImg: null, suppOrder: ['text','image'],
                 include: true, done: false
             };
         }
         function toggleQDetails(idx) {
-            document.getElementById(`q-details-${idx}`).classList.toggle('open');
+            const el = document.getElementById(`q-details-${idx}`);
+            if (el) el.classList.toggle('open');
         }
         function syncHeaderCheckbox(idx, type) {
             appData.questions[idx][type] = document.getElementById(`q-${type}-${idx}`).checked;
@@ -708,10 +767,15 @@
             for (let idx = 0; idx < appData.questions.length; idx++) {
                 const q = appData.questions[idx];
                 q.order = idx;
+                // 問題文の画像
+                const tf = document.getElementById(`q-textimg-${idx}`).files[0];
+                if(tf) q.textImg = await fileToBase64(tf);
+                // 選択肢の画像
                 for(let n=1; n<=6; n++) {
                     const f = document.getElementById(`q-c-img-${idx}-${n}`).files[0];
                     if(f) q.choices[n-1].img = await fileToBase64(f);
                 }
+                // 補足画像
                 const sf = document.getElementById(`q-supp-img-${idx}`).files[0];
                 if(sf) q.suppImg = await fileToBase64(sf);
             }
@@ -858,7 +922,10 @@
                 document.getElementById('host-q-title').innerText = `${raceName} / ${raceProgressLabel()}`;
             }
 
-            document.getElementById('host-q-text-view').innerText = q.text;
+            // 問題文（テキスト＋画像）
+            let qHtml = escapeHtml(q.text || '').replace(/\n/g, '<br>');
+            if (q.textImg) qHtml += `<div><img src="${q.textImg}" onclick="openImgPopup(this.src)" style="max-height:220px; margin-top:10px; cursor:zoom-in;"></div>`;
+            document.getElementById('host-q-text-view').innerHTML = qHtml;
             
             const bContainer = document.getElementById('host-boat-container');
             bContainer.innerHTML = "";
@@ -933,13 +1000,21 @@
         function goToRaceScreen() {
             changeHostScreen('host-p6');
             const isQ0 = (currentPlayIndex === 0);
-            const qForName = selectedQuestions[currentPlayIndex] || {};
-            const raceName = qForName.title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
+            const q = selectedQuestions[currentPlayIndex] || {};
+            const raceName = q.title || (isQ0 ? '0レース目(例題)' : `第${currentPlayIndex}レース`);
 
             if(isQ0) {
                 document.getElementById('host-p6-title').innerText = `${raceName} / 体験デモ走行`;
             } else {
                 document.getElementById('host-p6-title').innerText = `${raceName} / ${raceProgressLabel()}`;
+            }
+
+            // ★レース画面の上部に 1〜6 の選択肢一覧（テキストのみ）を表示
+            const legend = document.getElementById('race-choices-legend');
+            legend.innerHTML = "";
+            for(let i=1; i<=6; i++) {
+                const ch = (q.choices && q.choices[i-1]) || {};
+                legend.innerHTML += `<div class="race-legend-item"><span class="boat-num b${i}" style="transform:scale(0.7);">${i}</span><span>${escapeHtml(ch.text || '---')}</span></div>`;
             }
 
             const bCont = document.getElementById('race-bottom-bets-container');
@@ -963,7 +1038,6 @@
             
             racePhase = 'ready';
             finishedCount = 0;
-            const q = selectedQuestions[currentPlayIndex] || {};
 
             // 正解データを安全に解釈（壊れていても6艇ぶんを必ず用意）
             let ansRaw = (q.ans || '').split(',').map(v => parseInt(v.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 6);
@@ -1068,24 +1142,23 @@
 
             document.getElementById('btn-start-race').style.display = 'none';
             racePhase = 'racing';
-            raceStartTimestamp = null;   // ★最初のフレームの時刻を基準にする（負のelapsed=NaN即終了を防止）
+            raceStartTimestamp = null;   // 最初のフレームの時刻を基準にする（負のelapsed=NaN即終了を防止）
             requestAnimationFrame(raceAnimationLoop);
         }
 
         function raceAnimationLoop(now) {
             try {
-                if (raceStartTimestamp === null) raceStartTimestamp = now; // ★基準時刻を最初のフレームで取得
+                if (raceStartTimestamp === null) raceStartTimestamp = now;
                 let elapsed = (now - raceStartTimestamp) / 1000;
-                if (elapsed < 0) elapsed = 0;                              // ★負の経過時間を禁止（NaN防止）
+                if (elapsed < 0) elapsed = 0;
                 const goalX = 740;
                 const startX = 60;
                 const totalDistance = goalX - startX;
-                const BOAT_TIP = 24;                     // 艇の先端までの長さ（描画と一致）
-                const finishBackX = goalX - BOAT_TIP;   // 先端が赤線に触れるときの艇の後端座標
-                const waitLineX = finishBackX - 6;      // ゴール手前で団子になる待機ライン
-                const COAST_SPEED = 4;                  // ゴール後、艇全体が線を越えるまでの前進速度
+                const BOAT_TIP = 24;
+                const finishBackX = goalX - BOAT_TIP;
+                const waitLineX = finishBackX - 6;
+                const COAST_SPEED = 4;
 
-                // 安全装置：35秒で強制終了（着順どおりに残り艇を線の外まで出して確定）
                 if (elapsed > 35) {
                     boatsState.filter(b => b.goalTime === null)
                         .sort((a, b) => a.finalRank - b.finalRank)
@@ -1093,20 +1166,17 @@
                 }
 
                 boatsState.forEach(b => {
-                    // 既に艇全体が赤線を越えて停止済み
                     if (b.x >= goalX) { b.x = goalX; return; }
 
-                    // 先端が赤線を越えて着順確定済み → 艇全体が赤線を越えるまで滑らかに前進して停止
                     if (b.goalTime !== null) {
                         b.x = Math.min(goalX, b.x + COAST_SPEED);
                         b.lastX = b.x;
                         return;
                     }
 
-                    // --- まだゴールしていない艇（進行＋デッドヒート＋待機ライン） ---
                     let progressRatio = elapsed / b.targetGoalTime;
                     if (progressRatio > 1.0) progressRatio = 1.0;
-                    if (progressRatio < 0) progressRatio = 0; // ★保険（NaN防止）
+                    if (progressRatio < 0) progressRatio = 0;
 
                     let basePos = 0;
                     if (b.isCloser) {
@@ -1128,12 +1198,10 @@
                     b.x = startX + basePos + wobble;
                     if (b.lastX && b.x < b.lastX) b.x = b.lastX + 0.2;
 
-                    // 着順保証：上位艇が着順確定するまで手前で待機
                     let predecessorsPending = boatsState.some(o => o.finalRank < b.finalRank && o.goalTime === null);
                     if (predecessorsPending) {
                         if (b.x > waitLineX) b.x = waitLineX;
                     } else {
-                        // 先端（b.x + BOAT_TIP）が赤線に到達したら着順確定（座標はスナップせず、以降 coast で全体を通過）
                         if (elapsed >= b.targetGoalTime || (b.x + BOAT_TIP) >= goalX) {
                             b.goalTime = elapsed;
                             finishedCount++;
@@ -1144,7 +1212,6 @@
 
                 drawRaceCanvas();
 
-                // 全艇が完全に赤線を越えた（艇全体が通過）まで継続
                 if (boatsState.some(b => b.x < goalX)) {
                     raceAnimationId = requestAnimationFrame(raceAnimationLoop);
                 } else {
@@ -1205,7 +1272,6 @@
 
             const winOrders = targetOrders;
 
-            // 確定順位（1〜3着）を、艇番＋選択肢テキストで表示（「番」は付けない）
             const ordersHtml = winOrders.slice(0,3).map((num, i) => {
                 const ch = (q.choices && q.choices[num-1]) || {};
                 const label = ch.text ? escapeHtml(ch.text) : '';
@@ -1216,7 +1282,6 @@
             }).join('');
             document.getElementById('text-final-orders').innerHTML = ordersHtml;
 
-            // 補足情報：テキスト＋画像を指定順で描画（画像はタップで拡大）
             const suppBox = document.getElementById('text-supplementary-info');
             const suppOrder = q.suppOrder || ['text', 'image'];
             const suppParts = suppOrder.map(t => {
