@@ -1143,44 +1143,100 @@
             drawRaceCanvas();
         }
 
+        // 楕円（オーバル）コースの幾何
+        const COURSE = {
+            cx: 400, cy: 130,
+            laneRx: [350, 330, 310, 290, 270, 250], // 艇1(外)〜艇6(内)
+            laneRy: [108, 97, 86, 75, 64, 53],
+            startAngle: -Math.PI / 2 // 上（12時）がスタート/ゴールライン
+        };
+        // 進捗 t(0〜1)・レーン i(0〜5) → コース上の座標（反時計回り＝左回り）
+        function coursePoint(t, i) {
+            const ang = COURSE.startAngle - t * Math.PI * 2;
+            return {
+                x: COURSE.cx + COURSE.laneRx[i] * Math.cos(ang),
+                y: COURSE.cy + COURSE.laneRy[i] * Math.sin(ang)
+            };
+        }
+
         function drawRaceCanvas() {
             const canvas = document.getElementById('race-canvas');
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            for(let i=0; i<6; i++) {
-                ctx.fillStyle = (i % 2 === 0) ? '#0284c7' : '#075985';
-                ctx.fillRect(0, i*38 + 15, canvas.width, 38);
-                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            // 水面
+            ctx.fillStyle = '#0284c7';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 各レーン（楕円のリング）
+            for (let i = 0; i < 6; i++) {
+                ctx.strokeStyle = (i % 2 === 0) ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.12)';
                 ctx.lineWidth = 1;
-                ctx.strokeRect(0, i*38 + 15, canvas.width, 38);
+                ctx.beginPath();
+                ctx.ellipse(COURSE.cx, COURSE.cy, COURSE.laneRx[i], COURSE.laneRy[i], 0, 0, Math.PI * 2);
+                ctx.stroke();
             }
+            // 内側（インフィールド）
+            ctx.fillStyle = '#075985';
+            ctx.beginPath();
+            ctx.ellipse(COURSE.cx, COURSE.cy, COURSE.laneRx[5] - 14, COURSE.laneRy[5] - 10, 0, 0, Math.PI * 2);
+            ctx.fill();
 
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.moveTo(60, 15); ctx.lineTo(60, 245); ctx.stroke();
+            // スタート/ゴールライン（上・12時位置で各レーンを横断）
+            const sOuter = coursePoint(0, 0);
+            const sInner = coursePoint(0, 5);
             ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 4;
-            ctx.beginPath(); ctx.moveTo(740, 15); ctx.lineTo(740, 245); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(sOuter.x, sOuter.y - 8);
+            ctx.lineTo(sInner.x, sInner.y + 6);
+            ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText('START / GOAL', COURSE.cx, sOuter.y - 12);
+            ctx.textAlign = 'start';
 
+            // 各艇
             boatsState.forEach(b => {
-                if(racePhase === 'racing' && !b.goalTime) {
+                const t = Math.max(0, Math.min(1, (b.x - 60) / 680)); // 直線時の進捗を1周に対応
+                const i = b.id;
+                const p = coursePoint(t, i);
+                const p2 = coursePoint(Math.min(1, t + 0.004), i);
+                const heading = Math.atan2(p2.y - p.y, p2.x - p.x);
+
+                // 水しぶき
+                if (racePhase === 'racing' && !b.goalTime) {
                     ctx.fillStyle = 'rgba(255,255,255,0.6)';
-                    for(let i=0; i<4; i++) ctx.fillRect(b.x - 10 - Math.random()*15, b.y + 5 + Math.random()*8, 4, 4);
+                    for (let k = 0; k < 3; k++) {
+                        ctx.fillRect(p.x - Math.cos(heading) * (6 + Math.random() * 10) - 2,
+                                     p.y - Math.sin(heading) * (6 + Math.random() * 10) - 2, 3, 3);
+                    }
                 }
+
+                // 艇（進行方向へ向けた三角形）
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(heading);
                 ctx.fillStyle = b.color;
                 ctx.beginPath();
-                ctx.moveTo(b.x, b.y);
-                ctx.lineTo(b.x + 24, b.y + 6);
-                ctx.lineTo(b.x, b.y + 16);
+                ctx.moveTo(12, 0);
+                ctx.lineTo(-9, -7);
+                ctx.lineTo(-9, 7);
                 ctx.closePath();
                 ctx.fill();
                 ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+                ctx.restore();
+
+                // 艇番（常に正位置）
                 ctx.fillStyle = b.textColor;
                 ctx.font = 'bold 11px sans-serif';
-                ctx.fillText(b.num, b.x + 4, b.y + 13);
-                if(b.goalTime) {
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(b.num, p.x, p.y);
+                ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+                // 着順ラベル
+                if (b.goalTime) {
                     ctx.fillStyle = '#ffcc00';
                     ctx.font = 'italic bold 12px sans-serif';
-                    ctx.fillText(`${b.finalRank}着`, b.x + 30, b.y + 13);
+                    ctx.fillText(`${b.finalRank}着`, p.x + 12, p.y - 10);
                 }
             });
         }
