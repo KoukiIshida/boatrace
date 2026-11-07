@@ -1020,7 +1020,9 @@
             for(let i=1; i<=6; i++) {
                 const ch = q.choices[i-1];
                 let cardInner = `<span class="boat-num b${i}">${i}</span>`;
-                let textEl = `<div style="font-size:14px; margin-top:5px;">${ch.text || '---'}</div>`;
+                // テキストのみ（画像なし）のときは文字を大きく表示
+                let textSize = (q.layout === 'text') ? 22 : 14;
+                let textEl = `<div style="font-size:${textSize}px; margin-top:5px; font-weight:bold;">${ch.text || '---'}</div>`;
                 let imgEl = ch.img ? `<img src="${ch.img}" style="max-height:70px;">` : '';
                 if(q.layout === 'text') cardInner += textEl;
                 else if(q.layout === 'image') cardInner += imgEl;
@@ -1232,11 +1234,13 @@
                 ctx.fillText(b.num, p.x, p.y);
                 ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
 
-                // 着順ラベル
+                // 着順ラベル（艇の右）
                 if (b.goalTime) {
                     ctx.fillStyle = '#ffcc00';
-                    ctx.font = 'italic bold 12px sans-serif';
-                    ctx.fillText(`${b.finalRank}着`, p.x + 12, p.y - 10);
+                    ctx.font = 'italic bold 13px sans-serif';
+                    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                    ctx.fillText(`${b.finalRank}着`, p.x + 16, p.y);
+                    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
                 }
             });
         }
